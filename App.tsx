@@ -1,13 +1,17 @@
 
 import React, { useState, useEffect, useRef } from 'react';
+import { useLoadScript } from '@react-google-maps/api';
 import ItineraryCard from './components/ItineraryCard';
 import { DaySchedule, ItineraryItem, ItemType } from './types';
 import { supabase } from './src/lib/supabase';
 import { fetchPlaceInfo } from './src/utils/imageSearch';
 
+const API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string;
+const libraries: ("places")[] = ["places"];
+
 // Simple Modal Component for Adding Items
 const AddItemModal = ({ isOpen, onClose, onAdd }: { isOpen: boolean; onClose: () => void; onAdd: (item: Partial<ItineraryItem>) => void }) => {
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<Partial<ItineraryItem>>({
     title: '',
     time: '',
     duration: '',
@@ -17,6 +21,7 @@ const AddItemModal = ({ isOpen, onClose, onAdd }: { isOpen: boolean; onClose: ()
     link: '',
     imageUrl: '',
     notes: '',
+    locationCoordinates: undefined,
   });
   const [isFetching, setIsFetching] = useState(false);
 
@@ -27,28 +32,29 @@ const AddItemModal = ({ isOpen, onClose, onAdd }: { isOpen: boolean; onClose: ()
     if (!formData.title) return;
     onAdd(formData);
     onClose();
-    setFormData({ title: '', time: '', duration: '', type: ItemType.ACTIVITY, description: '', price: '', link: '', imageUrl: '', notes: '' });
+    setFormData({ title: '', time: '', duration: '', type: ItemType.ACTIVITY, description: '', price: '', link: '', imageUrl: '', notes: '', locationCoordinates: undefined });
   };
 
   const handleAutoFetch = async () => {
-    if (!formData.title.trim()) {
+    if (!formData.title?.trim()) {
       alert('請先輸入標題');
       return;
     }
 
     setIsFetching(true);
     try {
-      const { imageUrl, description, mapLink } = await fetchPlaceInfo(formData.title);
+      const { imageUrl, description, mapLink, locationCoordinates } = await fetchPlaceInfo(formData.title);
 
       setFormData(prev => ({
         ...prev,
         imageUrl: imageUrl || prev.imageUrl,
         description: description || prev.description,
         link: mapLink,
+        locationCoordinates: locationCoordinates || prev.locationCoordinates,
       }));
 
-      if (!imageUrl && !description) {
-        alert('找不到相關資訊，但已生成 Google Maps 連結');
+      if (!imageUrl && !description && !locationCoordinates) {
+        alert('找不到相關資訊');
       }
     } catch (error) {
       console.error('Auto-fetch error:', error);
@@ -76,7 +82,7 @@ const AddItemModal = ({ isOpen, onClose, onAdd }: { isOpen: boolean; onClose: ()
               <button
                 type="button"
                 onClick={handleAutoFetch}
-                disabled={isFetching || !formData.title.trim()}
+                disabled={isFetching || !formData.title?.trim()}
                 className="text-xs px-2 py-1 rounded bg-jp-blue text-white hover:bg-jp-red transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
               >
                 {isFetching ? (
@@ -183,6 +189,15 @@ const App: React.FC = () => {
 
   const navRef = useRef<HTMLDivElement>(null);
 
+  const { isLoaded, loadError } = useLoadScript({
+    googleMapsApiKey: API_KEY,
+    libraries,
+  });
+
+  useEffect(() => {
+    fetchData();
+  }, []);
+
   // Helper function to sort items by time
   const sortItemsByTime = (items: ItineraryItem[]): ItineraryItem[] => {
     return [...items].sort((a, b) => {
@@ -192,10 +207,6 @@ const App: React.FC = () => {
       return a.time.localeCompare(b.time);
     });
   };
-
-  useEffect(() => {
-    fetchData();
-  }, []);
 
   const fetchData = async () => {
     try {
@@ -312,6 +323,7 @@ const App: React.FC = () => {
       link: finalLink,
       imageUrl: newItemData.imageUrl,
       notes: newItemData.notes,
+      locationCoordinates: newItemData.locationCoordinates,
     };
 
     // Optimistic update
@@ -331,7 +343,9 @@ const App: React.FC = () => {
         price: newItem.price,
         link: newItem.link,
         image_url: newItem.imageUrl,
-        notes: newItem.notes
+        notes: newItem.notes,
+        lat: newItem.locationCoordinates?.lat,
+        lng: newItem.locationCoordinates?.lng,
       });
 
       if (error) throw error;
@@ -342,12 +356,20 @@ const App: React.FC = () => {
     }
   };
 
-  if (loading) {
+  if (loadError) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-jp-paper text-jp-ink">
+        <div>Google Maps 載入失敗，請檢查 API 金鑰或網路連線。</div>
+      </div>
+    );
+  }
+
+  if (!isLoaded || loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-jp-paper text-jp-ink">
         <div className="animate-pulse flex flex-col items-center">
           <div className="h-12 w-12 bg-jp-red/20 rounded-full mb-4"></div>
-          <div className="text-lg font-serif">載入旅程中...</div>
+          <div className="text-lg font-serif">載入中...</div>
         </div>
       </div>
     );

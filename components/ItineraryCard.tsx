@@ -1,6 +1,7 @@
 
 import React, { useState } from 'react';
 import { ItineraryItem, ItemType } from '../types';
+import Map from './Map';
 
 interface Props {
   item: ItineraryItem;
@@ -51,17 +52,21 @@ const ItineraryCard: React.FC<Props> = ({
       <div className={`relative rounded-xl overflow-hidden border shadow-sm transition-all hover:shadow-md ${getTypeColor(item.type)}`}>
 
         {/* Image Thumbnail - if available */}
-        {item.imageUrl && (
+        {(item.imageUrl || item.locationCoordinates) && (
           <div className="relative h-40 overflow-hidden bg-stone-100">
-            <img
-              src={item.imageUrl}
-              alt={item.title}
-              className="w-full h-full object-cover"
-              onError={(e) => {
-                // Hide image if it fails to load
-                (e.target as HTMLImageElement).style.display = 'none';
-              }}
-            />
+            {item.imageUrl ? (
+              <img
+                src={item.imageUrl}
+                alt={item.title}
+                className="w-full h-full object-cover"
+                onError={(e) => {
+                  // Hide image if it fails to load
+                  (e.target as HTMLImageElement).style.display = 'none';
+                }}
+              />
+            ) : item.locationCoordinates ? (
+              <Map center={item.locationCoordinates} />
+            ) : null}
           </div>
         )}
 
