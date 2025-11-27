@@ -53,12 +53,20 @@ const AddItemModal = ({ isOpen, onClose, onAdd }: { isOpen: boolean; onClose: ()
         locationCoordinates: locationCoordinates || prev.locationCoordinates,
       }));
 
+      // Provide detailed feedback
       if (!imageUrl && !description && !locationCoordinates) {
-        alert('找不到相關資訊');
+        alert('❌ 找不到相關資訊\n請檢查景點名稱或手動輸入');
+      } else {
+        const foundItems = [];
+        if (imageUrl) foundItems.push('照片');
+        if (description) foundItems.push('簡介');
+        if (locationCoordinates) foundItems.push('位置');
+
+        alert(`✅ 搜尋成功！\n已找到：${foundItems.join('、')}`);
       }
     } catch (error) {
       console.error('Auto-fetch error:', error);
-      alert('自動搜尋失敗，請稍後再試');
+      alert('❌ 自動搜尋失敗\n' + (error instanceof Error ? error.message : '請稍後再試'));
     } finally {
       setIsFetching(false);
     }
