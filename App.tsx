@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import ItineraryCard from './components/ItineraryCard';
 import { DaySchedule, ItineraryItem, ItemType } from './types';
 import { supabase } from './src/lib/supabase';
+import { fetchPlaceInfo } from './src/utils/imageSearch';
 
 // Simple Modal Component for Adding Items
 const AddItemModal = ({ isOpen, onClose, onAdd }: { isOpen: boolean; onClose: () => void; onAdd: (item: Partial<ItineraryItem>) => void }) => {
@@ -14,7 +15,10 @@ const AddItemModal = ({ isOpen, onClose, onAdd }: { isOpen: boolean; onClose: ()
     description: '',
     price: '',
     link: '',
+    imageUrl: '',
+    notes: '',
   });
+  const [isFetching, setIsFetching] = useState(false);
 
   if (!isOpen) return null;
 
@@ -23,7 +27,35 @@ const AddItemModal = ({ isOpen, onClose, onAdd }: { isOpen: boolean; onClose: ()
     if (!formData.title) return;
     onAdd(formData);
     onClose();
-    setFormData({ title: '', time: '', duration: '', type: ItemType.ACTIVITY, description: '', price: '', link: '' });
+    setFormData({ title: '', time: '', duration: '', type: ItemType.ACTIVITY, description: '', price: '', link: '', imageUrl: '', notes: '' });
+  };
+
+  const handleAutoFetch = async () => {
+    if (!formData.title.trim()) {
+      alert('請先輸入標題');
+      return;
+    }
+
+    setIsFetching(true);
+    try {
+      const { imageUrl, description, mapLink } = await fetchPlaceInfo(formData.title);
+
+      setFormData(prev => ({
+        ...prev,
+        imageUrl: imageUrl || prev.imageUrl,
+        description: description || prev.description,
+        link: mapLink,
+      }));
+
+      if (!imageUrl && !description) {
+        alert('找不到相關資訊，但已生成 Google Maps 連結');
+      }
+    } catch (error) {
+      console.error('Auto-fetch error:', error);
+      alert('自動搜尋失敗，請稍後再試');
+    } finally {
+      setIsFetching(false);
+    }
   };
 
   return (
@@ -39,7 +71,29 @@ const AddItemModal = ({ isOpen, onClose, onAdd }: { isOpen: boolean; onClose: ()
         </div>
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           <div>
-            <label className="block text-xs font-bold text-stone-500 uppercase mb-1">標題</label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-xs font-bold text-stone-500 uppercase">標題</label>
+              <button
+                type="button"
+                onClick={handleAutoFetch}
+                disabled={isFetching || !formData.title.trim()}
+                className="text-xs px-2 py-1 rounded bg-jp-blue text-white hover:bg-jp-red transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+              >
+                {isFetching ? (
+                  <>
+                    <svg className="animate-spin h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    搜尋中
+                  </>
+                ) : (
+                  <>
+                    🔍 自動搜尋
+                  </>
+                )}
+              </button>
+            </div>
             <input
               autoFocus
               type="text"
@@ -48,16 +102,6 @@ const AddItemModal = ({ isOpen, onClose, onAdd }: { isOpen: boolean; onClose: ()
               value={formData.title}
               onChange={e => setFormData({ ...formData, title: e.target.value })}
               required
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-bold text-stone-500 uppercase mb-1">Google Maps 連結</label>
-            <input
-              type="url"
-              className="w-full px-3 py-2 border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-jp-red/50 text-sm"
-              placeholder="貼上 Google Maps 網址"
-              value={formData.link}
-              onChange={e => setFormData({ ...formData, link: e.target.value })}
             />
           </div>
           <div className="flex gap-4">
@@ -109,13 +153,13 @@ const AddItemModal = ({ isOpen, onClose, onAdd }: { isOpen: boolean; onClose: ()
             </div>
           </div>
           <div>
-            <label className="block text-xs font-bold text-stone-500 uppercase mb-1">景點介紹 / 描述</label>
+            <label className="block text-xs font-bold text-stone-500 uppercase mb-1">備註 (選填)</label>
             <textarea
               className="w-full px-3 py-2 border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-jp-red/50 text-sm"
               rows={3}
-              placeholder="輸入景點特色、必吃美食..."
-              value={formData.description}
-              onChange={e => setFormData({ ...formData, description: e.target.value })}
+              placeholder="輸入備註或特殊事項..."
+              value={formData.notes}
+              onChange={e => setFormData({ ...formData, notes: e.target.value })}
             />
           </div>
           <button
@@ -139,9 +183,15 @@ const App: React.FC = () => {
 
   const navRef = useRef<HTMLDivElement>(null);
 
-  // Drag and Drop refs
-  const dragItem = useRef<number | null>(null);
-  const dragOverItem = useRef<number | null>(null);
+  // Helper function to sort items by time
+  const sortItemsByTime = (items: ItineraryItem[]): ItineraryItem[] => {
+    return [...items].sort((a, b) => {
+      if (!a.time && !b.time) return 0;
+      if (!a.time) return 1;
+      if (!b.time) return -1;
+      return a.time.localeCompare(b.time);
+    });
+  };
 
   useEffect(() => {
     fetchData();
@@ -180,6 +230,8 @@ const App: React.FC = () => {
             type: item.item_type as ItemType,
             price: item.price,
             link: item.link,
+            imageUrl: item.image_url,
+            notes: item.notes,
             locationQuery: item.location_query,
             locationCoordinates: item.lat && item.lng ? { lat: item.lat, lng: item.lng } : undefined
           }));
@@ -244,42 +296,6 @@ const App: React.FC = () => {
     }
   };
 
-  const handleDragStart = (e: React.DragEvent<HTMLDivElement>, index: number) => {
-    dragItem.current = index;
-  };
-
-  const handleDragEnter = (e: React.DragEvent<HTMLDivElement>, index: number) => {
-    dragOverItem.current = index;
-  };
-
-  const handleDragEnd = () => {
-    if (dragItem.current === null || dragOverItem.current === null) return;
-
-    // Create deep copy of items for the active day
-    const updatedSchedule = [...schedule];
-    const items = [...updatedSchedule[activeDayIndex].items];
-
-    // Remove from source
-    const draggedItemContent = items.splice(dragItem.current, 1)[0];
-
-    // Insert at destination
-    items.splice(dragOverItem.current, 0, draggedItemContent);
-
-    updatedSchedule[activeDayIndex].items = items;
-    setSchedule(updatedSchedule);
-
-    // Reset refs
-    dragItem.current = null;
-    dragOverItem.current = null;
-
-    // Note: Persisting reorder to DB would require a 'order' column and an API call here
-  };
-
-  // Prevent default to allow drop
-  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-  };
-
   const handleAddItem = async (newItemData: Partial<ItineraryItem>) => {
     // Use the user provided link, or default to a search query if empty (optional safety net)
     const finalLink = newItemData.link || (newItemData.title ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(newItemData.title)}` : undefined);
@@ -294,6 +310,8 @@ const App: React.FC = () => {
       description: newItemData.description,
       price: newItemData.price,
       link: finalLink,
+      imageUrl: newItemData.imageUrl,
+      notes: newItemData.notes,
     };
 
     // Optimistic update
@@ -311,7 +329,9 @@ const App: React.FC = () => {
         item_type: newItem.type,
         description: newItem.description,
         price: newItem.price,
-        link: newItem.link
+        link: newItem.link,
+        image_url: newItem.imageUrl,
+        notes: newItem.notes
       });
 
       if (error) throw error;
@@ -401,27 +421,16 @@ const App: React.FC = () => {
               尚無行程，點擊下方 + 新增。
             </div>
           ) : (
-            activeDay.items.map((item, index) => (
-              <ItineraryCard
-                key={item.id}
-                index={index}
-                item={item}
-                onDelete={() => handleDeleteItem(item.id)}
-                onDragStart={handleDragStart}
-                onDragEnter={handleDragEnter}
-                onDragEnd={handleDragEnd}
-                onDragOver={handleDragOver}
-              />
-            ))
+            <div className="space-y-4 px-4 pb-6">
+              {activeDay && sortItemsByTime(activeDay.items || []).map((item) => (
+                <ItineraryCard
+                  key={item.id}
+                  item={item}
+                  onDelete={() => handleDeleteItem(item.id)}
+                />
+              ))}
+            </div>
           )}
-        </div>
-
-        {/* Decorative footer element */}
-        <div className="mt-12 text-center opacity-30">
-          <svg className="w-12 h-12 mx-auto" viewBox="0 0 100 100" fill="currentColor">
-            <circle cx="50" cy="50" r="40" stroke="currentColor" strokeWidth="2" fill="none" />
-            <path d="M50 20 L50 80 M20 50 L80 50" stroke="currentColor" strokeWidth="1" />
-          </svg>
         </div>
 
       </main>

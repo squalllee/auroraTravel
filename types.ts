@@ -17,7 +17,8 @@ export interface ItineraryItem {
   type: ItemType;
   price?: string;
   link?: string;
-  // imageUrl removed
+  imageUrl?: string;
+  notes?: string; // User notes/remarks
   locationQuery?: string;
   locationCoordinates?: { lat: number, lng: number };
 }
