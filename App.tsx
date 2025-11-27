@@ -45,9 +45,25 @@ const AddItemModal = ({ isOpen, onClose, onAdd }: { isOpen: boolean; onClose: ()
     try {
       const { imageUrl, description, mapLink, locationCoordinates } = await fetchPlaceInfo(formData.title);
 
+      let finalImageUrl = imageUrl;
+
+      // If we got an image URL from Places API, upload it to Supabase
+      if (imageUrl) {
+        const { uploadImageToSupabase } = await import('./src/utils/imageUpload');
+        const tempId = `temp-${Date.now()}`;
+        const supabaseImageUrl = await uploadImageToSupabase(imageUrl, tempId);
+
+        if (supabaseImageUrl) {
+          finalImageUrl = supabaseImageUrl;
+          console.log('Image uploaded to Supabase:', supabaseImageUrl);
+        } else {
+          console.warn('Failed to upload to Supabase, using original URL');
+        }
+      }
+
       setFormData(prev => ({
         ...prev,
-        imageUrl: imageUrl || prev.imageUrl,
+        imageUrl: finalImageUrl || prev.imageUrl,
         description: description || prev.description,
         link: mapLink,
         locationCoordinates: locationCoordinates || prev.locationCoordinates,
