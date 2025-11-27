@@ -1,0 +1,147 @@
+
+import React from 'react';
+import { ItineraryItem, ItemType } from '../types';
+
+interface Props {
+  item: ItineraryItem;
+  index: number;
+  onDelete: () => void;
+  onDragStart: (e: React.DragEvent<HTMLDivElement>, index: number) => void;
+  onDragEnter: (e: React.DragEvent<HTMLDivElement>, index: number) => void;
+  onDragEnd: (e: React.DragEvent<HTMLDivElement>) => void;
+  onDragOver: (e: React.DragEvent<HTMLDivElement>) => void;
+  isDragging?: boolean;
+}
+
+const ItineraryCard: React.FC<Props> = ({ 
+  item, 
+  index,
+  onDelete, 
+  onDragStart, 
+  onDragEnter, 
+  onDragEnd, 
+  onDragOver,
+  isDragging 
+}) => {
+  const getIcon = (type: ItemType) => {
+    switch (type) {
+      case ItemType.FLIGHT: return '✈️';
+      case ItemType.TRAIN: return '🚆';
+      case ItemType.HOTEL: return '🏨';
+      case ItemType.CAR_RENTAL: return '🚗';
+      case ItemType.ACTIVITY: return '📷';
+      case ItemType.INFO: return '🏠';
+      default: return '📍';
+    }
+  };
+
+  const getTypeColor = (type: ItemType) => {
+    switch (type) {
+      case ItemType.FLIGHT: return 'bg-sky-50 text-sky-900 border-sky-100';
+      case ItemType.TRAIN: return 'bg-emerald-50 text-emerald-900 border-emerald-100';
+      case ItemType.HOTEL: return 'bg-indigo-50 text-indigo-900 border-indigo-100';
+      case ItemType.CAR_RENTAL: return 'bg-amber-50 text-amber-900 border-amber-100';
+      case ItemType.ACTIVITY: return 'bg-white text-stone-800 border-stone-200';
+      default: return 'bg-stone-50 text-stone-800 border-stone-200';
+    }
+  };
+
+  return (
+    <div 
+      className={`relative pl-8 pb-10 last:pb-0 group transition-all duration-200 ${isDragging ? 'opacity-40 scale-95' : 'opacity-100'}`}
+      draggable
+      onDragStart={(e) => onDragStart(e, index)}
+      onDragEnter={(e) => onDragEnter(e, index)}
+      onDragEnd={onDragEnd}
+      onDragOver={onDragOver}
+    >
+       {/* Timeline Connector */}
+       <div className="absolute left-[11px] top-6 bottom-0 w-0.5 bg-stone-300 group-last:hidden"></div>
+       {/* Timeline Dot */}
+       <div className="absolute left-0 top-1.5 w-6 h-6 rounded-full bg-white border-2 border-stone-400 flex items-center justify-center text-xs z-10 shadow-sm cursor-grab active:cursor-grabbing hover:border-jp-blue hover:scale-110 transition-transform">
+         {getIcon(item.type)}
+       </div>
+
+       <div className={`relative rounded-xl overflow-hidden border shadow-sm transition-all hover:shadow-md ${getTypeColor(item.type)}`}>
+         
+         {/* Controls Overlay (Delete / Drag) - Visible on Hover */}
+         <div className="absolute top-2 right-2 flex gap-2 z-20 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button 
+              onClick={(e) => {
+                e.stopPropagation();
+                if(window.confirm('確定要刪除此行程嗎？')) {
+                  onDelete();
+                }
+              }}
+              className="p-1.5 bg-white/90 rounded-full text-stone-400 hover:text-red-500 hover:bg-white shadow-sm transition-colors border border-stone-100"
+              title="刪除"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
+              </svg>
+            </button>
+            <div className="p-1.5 bg-white/90 rounded-full text-stone-400 cursor-grab active:cursor-grabbing shadow-sm border border-stone-100 hidden sm:block">
+               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                  <path fillRule="evenodd" d="M2 4.75A.75.75 0 012.75 4h14.5a.75.75 0 010 1.5H2.75A.75.75 0 012 4.75zm0 10.5a.75.75 0 01.75-.75h14.5a.75.75 0 010 1.5H2.75a.75.75 0 01-.75-.75zM2 10a.75.75 0 01.75-.75h14.5a.75.75 0 010 1.5H2.75A.75.75 0 012 10z" clipRule="evenodd" />
+               </svg>
+            </div>
+         </div>
+
+         <div className="p-4">
+            <div className="flex justify-between items-start">
+              <div className="flex-1">
+                <div className="flex items-center gap-2 mb-2 flex-wrap">
+                    {item.time && (
+                      <span className="inline-flex items-center px-2 py-0.5 bg-jp-ink/10 rounded text-xs font-bold text-jp-ink/80 backdrop-blur-sm">
+                        <svg className="w-3 h-3 mr-1 opacity-60" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        {item.time}
+                      </span>
+                    )}
+                    {item.duration && (
+                      <span className="inline-flex items-center px-2 py-0.5 bg-jp-red/10 text-jp-red rounded text-xs font-bold backdrop-blur-sm">
+                        <svg className="w-3 h-3 mr-1 opacity-60" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        {item.duration}
+                      </span>
+                    )}
+                </div>
+                <h3 className="font-serif font-bold text-lg leading-tight text-jp-ink pr-6">{item.title}</h3>
+              </div>
+              {item.price && (
+                <div className="text-right ml-4 shrink-0">
+                    <span className="block text-[10px] uppercase tracking-wider opacity-60">價格</span>
+                    <span className="font-sans font-bold text-sm text-jp-red">{item.price}</span>
+                </div>
+              )}
+            </div>
+
+            {item.description && (
+              <p className="mt-2 text-sm opacity-80 font-sans leading-relaxed text-stone-700">
+                {item.description}
+              </p>
+            )}
+
+            {/* Link Text - Always visible if link exists */}
+            {item.link && (
+                <a 
+                  href={item.link} 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="mt-3 inline-flex items-center gap-1 text-sm font-bold text-jp-blue hover:text-jp-red transition-colors"
+                >
+                  <span>查看詳情 / 地圖</span>
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
+                    <path fillRule="evenodd" d="M4.25 5.5a.75.75 0 00-.75.75v8.5c0 .414.336.75.75.75h8.5a.75.75 0 00.75-.75v-4a.75.75 0 011.5 0v4A2.25 2.25 0 0112.75 17h-8.5A2.25 2.25 0 012 14.75v-8.5A2.25 2.25 0 014.25 4h5a.75.75 0 010 1.5h-5z" clipRule="evenodd" />
+                  </svg>
+                </a>
+            )}
+         </div>
+       </div>
+    </div>
+  );
+};
+
+export default ItineraryCard;
