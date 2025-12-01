@@ -4,11 +4,9 @@ import { useLoadScript } from '@react-google-maps/api';
 import ItineraryCard from './components/ItineraryCard';
 import AuthPage from './components/AuthPage';
 import ExpenseTracker from './components/ExpenseTracker';
-import DayMap from './components/DayMap';
 import { DaySchedule, ItineraryItem, ItemType } from './types';
 import { supabase } from './src/lib/supabase';
 import { fetchPlaceInfo } from './src/utils/imageSearch';
-import { optimizeRoute, formatDistance, formatDuration } from './src/utils/routeOptimization';
 
 const API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string;
 const libraries: ("places")[] = ["places"];
@@ -141,13 +139,19 @@ const AddItemModal = ({ isOpen, onClose, onAdd }: { isOpen: boolean; onClose: ()
           <div className="flex gap-4">
             <div className="flex-1">
               <label className="block text-xs font-bold text-stone-500 uppercase mb-1">時間</label>
-              <input
-                type="time"
-                step="1800"
-                className="w-full px-3 py-2 border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-jp-red/50"
+              <select
+                className="w-full px-3 py-2 border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-jp-red/50 bg-white"
                 value={formData.time}
                 onChange={e => setFormData({ ...formData, time: e.target.value })}
-              />
+              >
+                <option value="">選擇時間</option>
+                {Array.from({ length: 48 }, (_, i) => {
+                  const hour = Math.floor(i / 2).toString().padStart(2, '0');
+                  const minute = i % 2 === 0 ? '00' : '30';
+                  const timeValue = `${hour}:${minute}`;
+                  return <option key={timeValue} value={timeValue}>{timeValue}</option>;
+                })}
+              </select>
             </div>
             <div className="flex-1">
               <label className="block text-xs font-bold text-stone-500 uppercase mb-1">停留時間</label>
@@ -217,7 +221,6 @@ const App: React.FC = () => {
   const [activeDayId, setActiveDayId] = useState<string>('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isExpenseTrackerOpen, setIsExpenseTrackerOpen] = useState(false);
-  const [isOptimizing, setIsOptimizing] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const navRef = useRef<HTMLDivElement>(null);
@@ -348,6 +351,9 @@ const App: React.FC = () => {
   // --- Handlers ---
 
   const handleDeleteItem = async (itemId: string) => {
+    // Find the item to get its imageUrl before deletion
+    const itemToDelete = activeDay?.items.find(item => item.id === itemId);
+
     // Optimistic update
     const previousSchedule = [...schedule];
     const updatedSchedule = [...schedule];
@@ -355,8 +361,20 @@ const App: React.FC = () => {
     setSchedule(updatedSchedule);
 
     try {
+      // Delete from database
       const { error } = await supabase.from('itinerary_items').delete().eq('id', itemId);
       if (error) throw error;
+
+      // Delete image from Supabase Storage if it exists and is from Supabase
+      if (itemToDelete?.imageUrl) {
+        console.log('Item has imageUrl:', itemToDelete.imageUrl);
+        if (itemToDelete.imageUrl.includes('supabase')) {
+          console.log('Deleting image from Supabase Storage...');
+          const { deleteImageFromSupabase } = await import('./src/utils/imageUpload');
+          const deleted = await deleteImageFromSupabase(itemToDelete.imageUrl);
+          console.log('Image deletion result:', deleted);
+        }
+      }
     } catch (error) {
       console.error('Error deleting item:', error);
       alert('刪除失敗');
@@ -412,66 +430,6 @@ const App: React.FC = () => {
       // Revert logic could be added here
     }
   };
-
-  const handleOptimizeRoute = async () => {
-    if (!activeDay || activeDay.items.length < 2) {
-      alert('需要至少兩個行程才能優化路線');
-      return;
-    }
-
-    const itemsWithCoords = activeDay.items.filter(item => item.locationCoordinates);
-    if (itemsWithCoords.length < 2) {
-      alert('需要至少兩個有座標的地點才能優化路線，請使用「自動搜尋」功能為行程新增地點資訊');
-      return;
-    }
-
-    if (!window.confirm('確定要優化此日的行程順序嗎？這將使用 Google Maps API 並可能產生費用。')) {
-      return;
-    }
-
-    setIsOptimizing(true);
-    try {
-      const result = await optimizeRoute(activeDay.items);
-
-      if (!result.success) {
-        alert(`路線優化失敗：${result.error}`);
-        return;
-      }
-
-      // Reorder items based on optimization result
-      const itemMap = new Map(activeDay.items.map(item => [item.id, item]));
-      const reorderedItems = result.optimizedOrder
-        .map(id => itemMap.get(id))
-        .filter(item => item !== undefined) as ItineraryItem[];
-
-      // Update schedule state
-      const updatedSchedule = [...schedule];
-      updatedSchedule[activeDayIndex].items = reorderedItems;
-      setSchedule(updatedSchedule);
-
-      // Update database with new order
-      const updatePromises = reorderedItems.map((item, index) =>
-        supabase
-          .from('itinerary_items')
-          .update({ sort_order: index })
-          .eq('id', item.id)
-      );
-
-      await Promise.all(updatePromises);
-
-      alert(
-        `✅ 路線優化完成！\n` +
-        `總距離：${formatDistance(result.totalDistance)}\n` +
-        `預估時間：${formatDuration(result.totalDuration)}`
-      );
-    } catch (error) {
-      console.error('Route optimization error:', error);
-      alert('路線優化失敗，請稍後再試');
-    } finally {
-      setIsOptimizing(false);
-    }
-  };
-
 
   // Show auth page if not authenticated
   if (!isAuthenticated) {
@@ -567,38 +525,7 @@ const App: React.FC = () => {
           <h2 className="text-2xl font-serif font-bold text-jp-ink flex items-center justify-center gap-2">
             {activeDay?.location}
           </h2>
-
-          {/* Route Optimization Button */}
-          {!isViewOnly && activeDay && activeDay.items.length >= 2 && (
-            <button
-              onClick={handleOptimizeRoute}
-              disabled={isOptimizing}
-              className="mt-3 inline-flex items-center gap-2 px-4 py-2 bg-jp-blue text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm font-bold shadow-md"
-            >
-              {isOptimizing ? (
-                <>
-                  <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                  優化中...
-                </>
-              ) : (
-                <>
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
-                    <path fillRule="evenodd" d="M8.161 2.58a1.875 1.875 0 011.678 0l4.993 2.498c.106.052.23.052.336 0l3.869-1.935A1.875 1.875 0 0121.75 4.82v12.485c0 .71-.401 1.36-1.037 1.677l-4.875 2.437a1.875 1.875 0 01-1.676 0l-4.994-2.497a.375.375 0 00-.336 0l-3.868 1.935A1.875 1.875 0 012.25 19.18V6.695c0-.71.401-1.36 1.036-1.677l4.875-2.437zM9 6a.75.75 0 01.75.75V15a.75.75 0 01-1.5 0V6.75A.75.75 0 019 6zm6.75 3a.75.75 0 00-1.5 0v8.25a.75.75 0 001.5 0V9z" clipRule="evenodd" />
-                  </svg>
-                  優化路線
-                </>
-              )}
-            </button>
-          )}
         </div>
-
-        {/* Daily Map */}
-        {activeDay && activeDay.items.length > 0 && (
-          <DayMap items={sortItemsByTime(activeDay.items || [])} />
-        )}
 
         {/* Itinerary Timeline */}
         <div className="relative">

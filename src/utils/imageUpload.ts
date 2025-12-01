@@ -56,24 +56,60 @@ export async function uploadImageToSupabase(imageUrl: string, itemId: string): P
  */
 export async function deleteImageFromSupabase(imageUrl: string): Promise<boolean> {
     try {
-        // Extract filename from URL
-        const urlParts = imageUrl.split('/');
-        const fileName = urlParts[urlParts.length - 1];
+        console.log('🗑️ Attempting to delete image:', imageUrl);
 
-        const { error } = await supabase.storage
+        // Validate that this is a Supabase Storage URL
+        if (!imageUrl.includes('supabase.co/storage')) {
+            console.log('⚠️ Not a Supabase Storage URL, skipping deletion');
+            return false;
+        }
+
+        // Extract filename from URL
+        // Supabase URL format: https://[project].supabase.co/storage/v1/object/public/[bucket]/[filename]
+        let fileName: string;
+
+        if (imageUrl.includes('/storage/v1/object/public/itinerary-images/')) {
+            // Extract everything after the bucket name
+            const parts = imageUrl.split('/storage/v1/object/public/itinerary-images/');
+            fileName = decodeURIComponent(parts[1]); // Decode URL encoding
+        } else {
+            // Fallback: just get the last part of the URL
+            const urlParts = imageUrl.split('/');
+            fileName = decodeURIComponent(urlParts[urlParts.length - 1]);
+        }
+
+        console.log('📝 Extracted filename:', fileName);
+
+        // Try to delete the file
+        const { data, error } = await supabase.storage
             .from('itinerary-images')
             .remove([fileName]);
 
         if (error) {
-            console.error('Supabase delete error:', error);
+            console.error('❌ Supabase delete error:', error);
+            console.error('Error details:', JSON.stringify(error, null, 2));
             return false;
         }
 
-        console.log('Image deleted successfully:', fileName);
+        console.log('✅ Delete API call successful');
+        console.log('Delete response:', data);
+
+        // Verify deletion by trying to get the file
+        const { data: fileData, error: checkError } = await supabase.storage
+            .from('itinerary-images')
+            .list('', { search: fileName });
+
+        if (fileData && fileData.length > 0) {
+            console.error('⚠️ WARNING: File still exists after deletion! This indicates a RLS policy issue.');
+            console.error('Please check Supabase Storage policies for DELETE operations.');
+            return false;
+        }
+
+        console.log('✅ Verified: Image deleted successfully');
         return true;
 
     } catch (error) {
-        console.error('Error deleting image from Supabase:', error);
+        console.error('❌ Error deleting image from Supabase:', error);
         return false;
     }
 }

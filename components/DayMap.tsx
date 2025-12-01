@@ -8,7 +8,7 @@ interface DayMapProps {
 
 const mapContainerStyle = {
     width: '100%',
-    height: '200px',
+    height: '400px',
     borderRadius: '0.75rem',
 };
 
