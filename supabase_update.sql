@@ -74,6 +74,7 @@ CREATE TABLE expenses (
     original_amount DECIMAL(10, 2),
     original_currency VARCHAR(10),
     description TEXT,
+    image_url TEXT,
     
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP

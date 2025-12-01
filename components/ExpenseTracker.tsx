@@ -51,6 +51,7 @@ const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
                 originalAmount: parseFloat(exp.original_amount || exp.amount), // Store original amount
                 originalCurrency: exp.original_currency || 'TWD', // Store original currency
                 description: exp.description,
+                imageUrl: exp.image_url,
                 createdAt: exp.created_at,
             }));
 
@@ -63,8 +64,19 @@ const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
         }
     };
 
-    const handleSaveExpense = async (expenseData: Partial<Expense>) => {
+    const handleSaveExpense = async (expenseData: Partial<Expense>, file?: File) => {
         try {
+            let imageUrl = expenseData.imageUrl || null;
+            const expenseId = editingExpense ? editingExpense.id : `exp-${Date.now()}`;
+
+            if (file) {
+                const { uploadImageToSupabase } = await import('../src/utils/imageUpload');
+                const newImageUrl = await uploadImageToSupabase(file, expenseId);
+                if (newImageUrl) {
+                    imageUrl = newImageUrl;
+                }
+            }
+
             if (editingExpense) {
                 // Update existing expense
                 const { error } = await supabase
@@ -77,15 +89,15 @@ const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
                         original_currency: expenseData.originalCurrency, // Save original currency
                         description: expenseData.description,
                         item_id: expenseData.itemId,
+                        image_url: imageUrl,
                     })
-                    .eq('id', editingExpense.id);
+                    .eq('id', expenseId);
 
                 if (error) throw error;
             } else {
                 // Create new expense
-                const newId = `exp-${Date.now()}`;
                 const { error } = await supabase.from('expenses').insert({
-                    id: newId,
+                    id: expenseId,
                     day_id: expenseData.dayId,
                     item_id: expenseData.itemId,
                     category: expenseData.category,
@@ -94,6 +106,7 @@ const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
                     original_amount: expenseData.originalAmount, // Save original amount
                     original_currency: expenseData.originalCurrency, // Save original currency
                     description: expenseData.description,
+                    image_url: imageUrl,
                 });
 
                 if (error) throw error;
@@ -111,8 +124,16 @@ const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
         if (!window.confirm('確定要刪除此支出嗎？')) return;
 
         try {
+            const expenseToDelete = expenses.find(exp => exp.id === expenseId);
+
             const { error } = await supabase.from('expenses').delete().eq('id', expenseId);
             if (error) throw error;
+
+            if (expenseToDelete?.imageUrl) {
+                const { deleteImageFromSupabase } = await import('../src/utils/imageUpload');
+                await deleteImageFromSupabase(expenseToDelete.imageUrl);
+            }
+
             fetchExpenses();
         } catch (error) {
             console.error('Error deleting expense:', error);
@@ -287,6 +308,11 @@ const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
                                                 <div className="font-bold text-stone-800">{getCategoryLabel(expense.category)}</div>
                                                 {expense.description && (
                                                     <p className="text-sm text-stone-600 mt-1">{expense.description}</p>
+                                                )}
+                                                {expense.imageUrl && (
+                                                    <a href={expense.imageUrl} target="_blank" rel="noopener noreferrer" className="mt-2 inline-block">
+                                                        <img src={expense.imageUrl} alt="Expense" className="h-16 w-16 rounded-md object-cover hover:opacity-80 transition-opacity" />
+                                                    </a>
                                                 )}
                                                 <p className="text-xs text-stone-400 mt-1">
                                                     {new Date(expense.createdAt).toLocaleDateString('zh-TW')}

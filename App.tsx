@@ -552,7 +552,12 @@ const App: React.FC = () => {
       </header>
 
       {/* Main Content Area */}
-      <main className="max-w-md mx-auto px-5 py-8 pb-32">
+      <main
+        ref={mainRef}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        className="max-w-md mx-auto px-5 py-8 pb-32">
 
         {/* Active Day Header */}
         <div className="mb-8 text-center animate-fade-in">

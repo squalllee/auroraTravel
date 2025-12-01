@@ -50,5 +50,6 @@ export interface Expense {
   originalAmount?: number; // Amount in original currency
   originalCurrency?: string; // Original currency code
   description?: string;
+  imageUrl?: string;
   createdAt: string;
 }

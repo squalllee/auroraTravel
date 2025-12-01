@@ -6,19 +6,27 @@ import { supabase } from '../lib/supabase';
  * @param itemId - Unique identifier for the itinerary item (used as filename)
  * @returns The public URL of the uploaded image in Supabase Storage, or null if failed
  */
-export async function uploadImageToSupabase(imageUrl: string, itemId: string): Promise<string | null> {
+export async function uploadImageToSupabase(image: string | File, itemId: string): Promise<string | null> {
     try {
-        // Download the image
-        const response = await fetch(imageUrl);
-        if (!response.ok) {
-            throw new Error(`Failed to download image: ${response.statusText}`);
-        }
+        let blob: Blob;
+        let fileExt: string;
 
-        const blob = await response.blob();
+        if (typeof image === 'string') {
+            // It's a URL, download it
+            const response = await fetch(image);
+            if (!response.ok) {
+                throw new Error(`Failed to download image: ${response.statusText}`);
+            }
+            blob = await response.blob();
+            fileExt = blob.type.split('/')[1] || 'jpg';
+        } else {
+            // It's a File object
+            blob = image;
+            fileExt = image.name.split('.').pop() || 'jpg';
+        }
 
         // Generate filename with timestamp to ensure uniqueness
         const timestamp = Date.now();
-        const fileExt = blob.type.split('/')[1] || 'jpg';
         const fileName = `${itemId}-${timestamp}.${fileExt}`;
         const filePath = `${fileName}`;
 

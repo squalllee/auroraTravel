@@ -7,7 +7,7 @@ import { fetchExchangeRate } from '../src/utils/currency';
 interface ExpenseModalProps {
     isOpen: boolean;
     onClose: () => void;
-    onSave: (expense: Partial<Expense>) => void;
+    onSave: (expense: Partial<Expense>, file?: File) => void;
     dayId: string;
     expense?: Expense;
     itemOptions?: { id: string; title: string }[];
@@ -32,6 +32,10 @@ const ExpenseModal: React.FC<ExpenseModalProps> = ({
     });
     const [currentRate, setCurrentRate] = useState<number>(1);
     const [isLoadingRate, setIsLoadingRate] = useState(false);
+    const [selectedFile, setSelectedFile] = useState<File | null>(null);
+    const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+    const fileInputRef = React.useRef<HTMLInputElement>(null);
+
 
     useEffect(() => {
         if (expense) {
@@ -40,6 +44,9 @@ const ExpenseModal: React.FC<ExpenseModalProps> = ({
                 originalAmount: expense.originalAmount || expense.amount,
                 originalCurrency: expense.originalCurrency || expense.currency,
             });
+            if (expense.imageUrl) {
+                setPreviewUrl(expense.imageUrl);
+            }
             // Calculate implied rate from existing data
             if (expense.originalAmount && expense.amount) {
                 setCurrentRate(expense.amount / expense.originalAmount);
@@ -58,22 +65,46 @@ const ExpenseModal: React.FC<ExpenseModalProps> = ({
             });
             setCurrentRate(36.42); // Default EUR rate approx, will be updated by fetch if triggered or just use fallback
         }
+        // Reset file state when modal is opened or expense changes
+        setSelectedFile(null);
+        if (!expense?.imageUrl) {
+          setPreviewUrl(null);
+        }
     }, [expense, isOpen]);
 
     if (!isOpen) return null;
 
+    const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (file) {
+            setSelectedFile(file);
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                setPreviewUrl(reader.result as string);
+            };
+            reader.readAsDataURL(file);
+        }
+    };
+
+    const handleTakePhotoClick = () => {
+        fileInputRef.current?.click();
+    };
+
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        if (formData.amount && formData.amount > 0) {
+        if ((formData.originalAmount || 0) > 0) {
             // Ensure we save TWD as the main currency/amount
-            onSave({
-                ...formData,
-                dayId,
-                currency: 'TWD',
-                // If original currency is TWD, ensure originalAmount matches amount
-                originalAmount: formData.originalCurrency === 'TWD' ? formData.amount : formData.originalAmount,
-                originalCurrency: formData.originalCurrency
-            });
+            onSave(
+                {
+                    ...formData,
+                    dayId,
+                    currency: 'TWD',
+                    // If original currency is TWD, ensure originalAmount matches amount
+                    originalAmount: formData.originalCurrency === 'TWD' ? formData.amount : formData.originalAmount,
+                    originalCurrency: formData.originalCurrency,
+                },
+                selectedFile || undefined
+            );
             onClose();
         }
     };
@@ -212,7 +243,7 @@ const ExpenseModal: React.FC<ExpenseModalProps> = ({
                     </div>
 
                     {/* Converted Amount Display */}
-                    {formData.originalCurrency && (
+                    {formData.originalCurrency && formData.originalCurrency !== 'TWD' && (
                         <div className="bg-stone-100 p-3 rounded-lg flex justify-between items-center">
                             <span className="text-sm text-stone-500 flex items-center gap-2">
                                 匯率: {isLoadingRate ? (
@@ -226,6 +257,38 @@ const ExpenseModal: React.FC<ExpenseModalProps> = ({
                             </span>
                         </div>
                     )}
+                     {/* Photo upload */}
+                     <div>
+                        <label className="block text-xs font-bold text-stone-500 uppercase mb-2">
+                            照片 (選填)
+                        </label>
+                        <div className="flex items-center gap-4">
+                            <div className="w-24 h-24 bg-stone-100 rounded-lg flex items-center justify-center overflow-hidden">
+                                {previewUrl ? (
+                                    <img src={previewUrl} alt="Preview" className="w-full h-full object-cover" />
+                                ) : (
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-stone-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l-1.586-1.586a2 2 0 00-2.828 0L6 14m6-6l.01.01" />
+                                    </svg>
+                                )}
+                            </div>
+                            <input
+                                type="file"
+                                accept="image/*"
+                                capture="environment"
+                                ref={fileInputRef}
+                                onChange={handleFileChange}
+                                className="hidden"
+                            />
+                            <button
+                                type="button"
+                                onClick={handleTakePhotoClick}
+                                className="px-4 py-2 border border-stone-300 rounded-lg text-sm font-bold text-stone-600 hover:bg-stone-100 transition-colors"
+                            >
+                                拍攝或選擇照片
+                            </button>
+                        </div>
+                    </div>
 
                     {/* Link to Item (Optional) */}
                     {itemOptions.length > 0 && (
