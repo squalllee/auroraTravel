@@ -46,8 +46,10 @@ const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
                 dayId: exp.day_id,
                 itemId: exp.item_id,
                 category: exp.category as ExpenseCategory,
-                amount: parseFloat(exp.amount),
-                currency: exp.currency,
+                amount: parseFloat(exp.amount), // This is TWD amount from DB
+                currency: 'TWD', // Primary currency for display
+                originalAmount: parseFloat(exp.original_amount || exp.amount), // Store original amount
+                originalCurrency: exp.original_currency || 'TWD', // Store original currency
                 description: exp.description,
                 createdAt: exp.created_at,
             }));
@@ -69,8 +71,10 @@ const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
                     .from('expenses')
                     .update({
                         category: expenseData.category,
-                        amount: expenseData.amount,
-                        currency: expenseData.currency,
+                        amount: expenseData.amount, // Save TWD amount to 'amount' column
+                        currency: 'TWD', // Always TWD for the main amount
+                        original_amount: expenseData.originalAmount, // Save original amount
+                        original_currency: expenseData.originalCurrency, // Save original currency
                         description: expenseData.description,
                         item_id: expenseData.itemId,
                     })
@@ -85,8 +89,10 @@ const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
                     day_id: expenseData.dayId,
                     item_id: expenseData.itemId,
                     category: expenseData.category,
-                    amount: expenseData.amount,
-                    currency: expenseData.currency,
+                    amount: expenseData.amount, // Save TWD amount to 'amount' column
+                    currency: 'TWD', // Always TWD for the main amount
+                    original_amount: expenseData.originalAmount, // Save original amount
+                    original_currency: expenseData.originalCurrency, // Save original currency
                     description: expenseData.description,
                 });
 
@@ -164,14 +170,13 @@ const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
         return grouped;
     };
 
-    const calculateTotal = (exps: Expense[], currency?: string) => {
-        return exps
-            .filter(exp => !currency || exp.currency === currency)
-            .reduce((sum, exp) => sum + exp.amount, 0);
+    // Calculate total expenses in TWD
+    const calculateTotal = (expensesToSum: Expense[]) => {
+        return expensesToSum.reduce((sum, expense) => sum + (expense.amount || 0), 0);
     };
 
     const getCurrencies = (exps: Expense[]) => {
-        return [...new Set(exps.map(exp => exp.currency))];
+        return [...new Set(exps.map(exp => exp.originalCurrency))]; // Use originalCurrency for category view
     };
 
     if (!isOpen) return null;
@@ -203,8 +208,8 @@ const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
                         <button
                             onClick={() => setViewMode('day')}
                             className={`px-4 py-2 rounded-t-lg font-bold text-sm transition-colors ${viewMode === 'day'
-                                    ? 'bg-white text-jp-green border-b-2 border-jp-green'
-                                    : 'text-stone-500 hover:text-stone-700'
+                                ? 'bg-white text-jp-green border-b-2 border-jp-green'
+                                : 'text-stone-500 hover:text-stone-700'
                                 }`}
                         >
                             當日支出
@@ -212,8 +217,8 @@ const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
                         <button
                             onClick={() => setViewMode('category')}
                             className={`px-4 py-2 rounded-t-lg font-bold text-sm transition-colors ${viewMode === 'category'
-                                    ? 'bg-white text-jp-green border-b-2 border-jp-green'
-                                    : 'text-stone-500 hover:text-stone-700'
+                                ? 'bg-white text-jp-green border-b-2 border-jp-green'
+                                : 'text-stone-500 hover:text-stone-700'
                                 }`}
                         >
                             分類統計
@@ -221,8 +226,8 @@ const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
                         <button
                             onClick={() => setViewMode('all')}
                             className={`px-4 py-2 rounded-t-lg font-bold text-sm transition-colors ${viewMode === 'all'
-                                    ? 'bg-white text-jp-green border-b-2 border-jp-green'
-                                    : 'text-stone-500 hover:text-stone-700'
+                                ? 'bg-white text-jp-green border-b-2 border-jp-green'
+                                : 'text-stone-500 hover:text-stone-700'
                                 }`}
                         >
                             全部支出
@@ -253,11 +258,19 @@ const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
                                                 {exps.length} 筆
                                             </span>
                                         </div>
-                                        {getCurrencies(exps).map(curr => (
-                                            <div key={curr} className="text-right text-jp-green font-bold">
-                                                {calculateTotal(exps, curr).toFixed(2)} {curr}
+                                        {/* Display total for category in TWD */}
+                                        <div className="text-right text-jp-green font-bold">
+                                            {calculateTotal(exps).toFixed(2)} TWD
+                                        </div>
+                                        {currencies.length > 1 && ( // Only show original currencies if there's more than one
+                                            <div className="text-right text-sm text-stone-500 mt-1">
+                                                {getCurrencies(exps).map(curr => (
+                                                    <span key={curr} className="ml-2">
+                                                        {exps.filter(e => e.originalCurrency === curr).reduce((sum, e) => sum + (e.originalAmount || 0), 0).toFixed(2)} {curr}
+                                                    </span>
+                                                ))}
                                             </div>
-                                        ))}
+                                        )}
                                     </div>
                                 );
                             })}
@@ -282,10 +295,14 @@ const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
                                         </div>
                                         <div className="flex items-center gap-3">
                                             <div className="text-right">
-                                                <div className="font-bold text-lg text-jp-green">
-                                                    {expense.amount.toFixed(2)}
+                                                <div className="font-bold text-jp-ink">
+                                                    {Math.round(expense.amount).toLocaleString()} <span className="text-xs font-normal">TWD</span>
                                                 </div>
-                                                <div className="text-xs text-stone-500">{expense.currency}</div>
+                                                {expense.originalCurrency && expense.originalCurrency !== 'TWD' && (
+                                                    <div className="text-xs text-stone-400">
+                                                        {expense.originalAmount?.toLocaleString()} {expense.originalCurrency}
+                                                    </div>
+                                                )}
                                             </div>
                                             {!isViewOnly && (
                                                 <div className="flex gap-1">
@@ -326,11 +343,9 @@ const ExpenseTracker: React.FC<ExpenseTrackerProps> = ({
                         <div>
                             <div className="text-xs text-stone-500 uppercase font-bold">總支出</div>
                             <div className="flex gap-4 mt-1">
-                                {currencies.map(curr => (
-                                    <div key={curr} className="font-bold text-xl text-jp-green">
-                                        {calculateTotal(filteredExpenses, curr).toFixed(2)} {curr}
-                                    </div>
-                                ))}
+                                <div className="font-bold text-xl text-jp-green">
+                                    {calculateTotal(filteredExpenses).toFixed(2)} TWD
+                                </div>
                             </div>
                         </div>
                         {!isViewOnly && (

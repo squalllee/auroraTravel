@@ -45,8 +45,10 @@ export interface Expense {
   dayId: string;
   itemId?: string;
   category: ExpenseCategory;
-  amount: number;
-  currency: string;
+  amount: number; // TWD amount
+  currency: string; // TWD
+  originalAmount?: number; // Amount in original currency
+  originalCurrency?: string; // Original currency code
   description?: string;
   createdAt: string;
 }

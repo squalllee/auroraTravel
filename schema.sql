@@ -1,4 +1,5 @@
 -- Drop existing tables and types if they exist to ensure a clean slate
+DROP TABLE IF EXISTS expenses;
 DROP TABLE IF EXISTS itinerary_items;
 DROP TABLE IF EXISTS days;
 DROP TYPE IF EXISTS item_type_enum;
@@ -67,8 +68,10 @@ CREATE TABLE expenses (
     item_id VARCHAR(50) REFERENCES itinerary_items(id) ON DELETE SET NULL,
     
     category VARCHAR(50) NOT NULL,
-    amount DECIMAL(10, 2) NOT NULL,
+    amount DECIMAL(10, 2) NOT NULL, -- TWD amount
     currency VARCHAR(10) NOT NULL DEFAULT 'TWD',
+    original_amount DECIMAL(10, 2),
+    original_currency VARCHAR(10),
     description TEXT,
     
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,

@@ -1,7 +1,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { Expense, ExpenseCategory } from '../types';
-import { supabase } from '../src/lib/supabase';
+import { EXCHANGE_RATES } from '../constants';
+import { fetchExchangeRate } from '../src/utils/currency';
 
 interface ExpenseModalProps {
     isOpen: boolean;
@@ -24,21 +25,38 @@ const ExpenseModal: React.FC<ExpenseModalProps> = ({
         category: ExpenseCategory.FOOD,
         amount: 0,
         currency: 'TWD',
+        originalAmount: 0,
+        originalCurrency: 'EUR',
         description: '',
         itemId: undefined,
     });
+    const [currentRate, setCurrentRate] = useState<number>(1);
+    const [isLoadingRate, setIsLoadingRate] = useState(false);
 
     useEffect(() => {
         if (expense) {
-            setFormData(expense);
+            setFormData({
+                ...expense,
+                originalAmount: expense.originalAmount || expense.amount,
+                originalCurrency: expense.originalCurrency || expense.currency,
+            });
+            // Calculate implied rate from existing data
+            if (expense.originalAmount && expense.amount) {
+                setCurrentRate(expense.amount / expense.originalAmount);
+            } else {
+                setCurrentRate(1);
+            }
         } else {
             setFormData({
                 category: ExpenseCategory.FOOD,
                 amount: 0,
                 currency: 'TWD',
+                originalAmount: 0,
+                originalCurrency: 'EUR',
                 description: '',
                 itemId: undefined,
             });
+            setCurrentRate(36.42); // Default EUR rate approx, will be updated by fetch if triggered or just use fallback
         }
     }, [expense, isOpen]);
 
@@ -47,8 +65,53 @@ const ExpenseModal: React.FC<ExpenseModalProps> = ({
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         if (formData.amount && formData.amount > 0) {
-            onSave({ ...formData, dayId });
+            // Ensure we save TWD as the main currency/amount
+            onSave({
+                ...formData,
+                dayId,
+                currency: 'TWD',
+                // If original currency is TWD, ensure originalAmount matches amount
+                originalAmount: formData.originalCurrency === 'TWD' ? formData.amount : formData.originalAmount,
+                originalCurrency: formData.originalCurrency
+            });
             onClose();
+        }
+    };
+
+    const handleOriginalAmountChange = (val: number) => {
+        setFormData({
+            ...formData,
+            originalAmount: val,
+            amount: parseFloat((val * currentRate).toFixed(2))
+        });
+    };
+
+    const handleOriginalCurrencyChange = async (currency: string) => {
+        if (currency === 'TWD') {
+            setCurrentRate(1);
+            setFormData({
+                ...formData,
+                originalCurrency: currency,
+                amount: formData.originalAmount
+            });
+            return;
+        }
+
+        setIsLoadingRate(true);
+        try {
+            const rate = await fetchExchangeRate(currency);
+            setCurrentRate(rate);
+            const currentOriginalAmount = formData.originalAmount || 0;
+            setFormData({
+                ...formData,
+                originalCurrency: currency,
+                amount: parseFloat((currentOriginalAmount * rate).toFixed(2))
+            });
+        } catch (error) {
+            console.error('Failed to fetch rate', error);
+            // Fallback to constant if fetch fails (handled in utility, but just in case)
+        } finally {
+            setIsLoadingRate(false);
         }
     };
 
@@ -105,8 +168,8 @@ const ExpenseModal: React.FC<ExpenseModalProps> = ({
                                     type="button"
                                     onClick={() => setFormData({ ...formData, category: cat })}
                                     className={`p-3 rounded-lg border-2 transition-all ${formData.category === cat
-                                            ? 'border-jp-green bg-jp-green/10 text-jp-green'
-                                            : 'border-stone-200 hover:border-stone-300'
+                                        ? 'border-jp-green bg-jp-green/10 text-jp-green'
+                                        : 'border-stone-200 hover:border-stone-300'
                                         }`}
                                 >
                                     <div className="text-2xl mb-1">{getCategoryIcon(cat)}</div>
@@ -120,15 +183,15 @@ const ExpenseModal: React.FC<ExpenseModalProps> = ({
                     <div className="flex gap-3">
                         <div className="flex-1">
                             <label className="block text-xs font-bold text-stone-500 uppercase mb-2">
-                                金額
+                                金額 ({formData.originalCurrency})
                             </label>
                             <input
                                 type="number"
                                 step="0.01"
                                 min="0"
                                 className="w-full px-3 py-2 border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-jp-green/50"
-                                value={formData.amount || ''}
-                                onChange={(e) => setFormData({ ...formData, amount: parseFloat(e.target.value) || 0 })}
+                                value={formData.originalAmount || ''}
+                                onChange={(e) => handleOriginalAmountChange(parseFloat(e.target.value) || 0)}
                                 required
                             />
                         </div>
@@ -138,19 +201,31 @@ const ExpenseModal: React.FC<ExpenseModalProps> = ({
                             </label>
                             <select
                                 className="w-full px-3 py-2 border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-jp-green/50 bg-white"
-                                value={formData.currency}
-                                onChange={(e) => setFormData({ ...formData, currency: e.target.value })}
+                                value={formData.originalCurrency}
+                                onChange={(e) => handleOriginalCurrencyChange(e.target.value)}
                             >
-                                <option value="TWD">TWD</option>
-                                <option value="USD">USD</option>
-                                <option value="EUR">EUR</option>
-                                <option value="DKK">DKK</option>
-                                <option value="SEK">SEK</option>
-                                <option value="NOK">NOK</option>
-                                <option value="VND">VND</option>
+                                {Object.keys(EXCHANGE_RATES).map(curr => (
+                                    <option key={curr} value={curr}>{curr}</option>
+                                ))}
                             </select>
                         </div>
                     </div>
+
+                    {/* Converted Amount Display */}
+                    {formData.originalCurrency && (
+                        <div className="bg-stone-100 p-3 rounded-lg flex justify-between items-center">
+                            <span className="text-sm text-stone-500 flex items-center gap-2">
+                                匯率: {isLoadingRate ? (
+                                    <span className="animate-pulse">載入中...</span>
+                                ) : (
+                                    currentRate.toFixed(4)
+                                )}
+                            </span>
+                            <span className="font-bold text-jp-green text-lg">
+                                ≈ {formData.amount?.toFixed(0)} TWD
+                            </span>
+                        </div>
+                    )}
 
                     {/* Link to Item (Optional) */}
                     {itemOptions.length > 0 && (

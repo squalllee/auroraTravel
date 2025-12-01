@@ -4,6 +4,14 @@ import { DaySchedule, ItemType } from './types';
 // Helper to generate a Google Maps Search Link
 const getMapLink = (query: string) => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
 
+export const EXCHANGE_RATES: Record<string, number> = {
+  'EUR': 36.42,
+  'NOK': 3.10,
+  'DKK': 4.85,
+  'VND': 0.0012,
+};
+
+
 export const ITINERARY: DaySchedule[] = [
   {
     id: 'day1',
