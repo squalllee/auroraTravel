@@ -30,3 +30,23 @@ export interface DaySchedule {
   location: string;
   items: ItineraryItem[];
 }
+
+export enum ExpenseCategory {
+  FOOD = 'FOOD',
+  TRANSPORT = 'TRANSPORT',
+  ACCOMMODATION = 'ACCOMMODATION',
+  ACTIVITY = 'ACTIVITY',
+  SHOPPING = 'SHOPPING',
+  OTHER = 'OTHER'
+}
+
+export interface Expense {
+  id: string;
+  dayId: string;
+  itemId?: string;
+  category: ExpenseCategory;
+  amount: number;
+  currency: string;
+  description?: string;
+  createdAt: string;
+}

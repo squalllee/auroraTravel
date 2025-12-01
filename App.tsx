@@ -2,9 +2,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useLoadScript } from '@react-google-maps/api';
 import ItineraryCard from './components/ItineraryCard';
+import AuthPage from './components/AuthPage';
+import ExpenseTracker from './components/ExpenseTracker';
 import { DaySchedule, ItineraryItem, ItemType } from './types';
 import { supabase } from './src/lib/supabase';
 import { fetchPlaceInfo } from './src/utils/imageSearch';
+import { optimizeRoute, formatDistance, formatDuration } from './src/utils/routeOptimization';
 
 const API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string;
 const libraries: ("places")[] = ["places"];
@@ -206,9 +209,13 @@ const AddItemModal = ({ isOpen, onClose, onAdd }: { isOpen: boolean; onClose: ()
 
 
 const App: React.FC = () => {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isViewOnly, setIsViewOnly] = useState(false);
   const [schedule, setSchedule] = useState<DaySchedule[]>([]);
   const [activeDayId, setActiveDayId] = useState<string>('');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isExpenseTrackerOpen, setIsExpenseTrackerOpen] = useState(false);
+  const [isOptimizing, setIsOptimizing] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const navRef = useRef<HTMLDivElement>(null);
@@ -218,9 +225,33 @@ const App: React.FC = () => {
     libraries,
   });
 
+  // Check authentication on mount
   useEffect(() => {
-    fetchData();
+    const authMode = sessionStorage.getItem('auth_mode');
+    if (authMode === 'full' || authMode === 'view_only') {
+      setIsAuthenticated(true);
+      setIsViewOnly(authMode === 'view_only');
+    }
   }, []);
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      fetchData();
+    }
+  }, [isAuthenticated]);
+
+  const handleAuthenticate = (viewOnly: boolean) => {
+    setIsAuthenticated(true);
+    setIsViewOnly(viewOnly);
+  };
+
+  const handleLogout = () => {
+    if (window.confirm('確定要登出嗎？')) {
+      sessionStorage.removeItem('auth_mode');
+      setIsAuthenticated(false);
+      setIsViewOnly(false);
+    }
+  };
 
   // Helper function to sort items by time
   const sortItemsByTime = (items: ItineraryItem[]): ItineraryItem[] => {
@@ -380,6 +411,71 @@ const App: React.FC = () => {
     }
   };
 
+  const handleOptimizeRoute = async () => {
+    if (!activeDay || activeDay.items.length < 2) {
+      alert('需要至少兩個行程才能優化路線');
+      return;
+    }
+
+    const itemsWithCoords = activeDay.items.filter(item => item.locationCoordinates);
+    if (itemsWithCoords.length < 2) {
+      alert('需要至少兩個有座標的地點才能優化路線，請使用「自動搜尋」功能為行程新增地點資訊');
+      return;
+    }
+
+    if (!window.confirm('確定要優化此日的行程順序嗎？這將使用 Google Maps API 並可能產生費用。')) {
+      return;
+    }
+
+    setIsOptimizing(true);
+    try {
+      const result = await optimizeRoute(activeDay.items);
+
+      if (!result.success) {
+        alert(`路線優化失敗：${result.error}`);
+        return;
+      }
+
+      // Reorder items based on optimization result
+      const itemMap = new Map(activeDay.items.map(item => [item.id, item]));
+      const reorderedItems = result.optimizedOrder
+        .map(id => itemMap.get(id))
+        .filter(item => item !== undefined) as ItineraryItem[];
+
+      // Update schedule state
+      const updatedSchedule = [...schedule];
+      updatedSchedule[activeDayIndex].items = reorderedItems;
+      setSchedule(updatedSchedule);
+
+      // Update database with new order
+      const updatePromises = reorderedItems.map((item, index) =>
+        supabase
+          .from('itinerary_items')
+          .update({ sort_order: index })
+          .eq('id', item.id)
+      );
+
+      await Promise.all(updatePromises);
+
+      alert(
+        `✅ 路線優化完成！\n` +
+        `總距離：${formatDistance(result.totalDistance)}\n` +
+        `預估時間：${formatDuration(result.totalDuration)}`
+      );
+    } catch (error) {
+      console.error('Route optimization error:', error);
+      alert('路線優化失敗，請稍後再試');
+    } finally {
+      setIsOptimizing(false);
+    }
+  };
+
+
+  // Show auth page if not authenticated
+  if (!isAuthenticated) {
+    return <AuthPage onAuthenticate={handleAuthenticate} />;
+  }
+
   if (loadError) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-jp-paper text-jp-ink">
@@ -405,11 +501,22 @@ const App: React.FC = () => {
       {/* Header / Date Navigation - Sticky */}
       <header className="sticky top-0 z-40 bg-[#F9F7F2]/95 backdrop-blur-md border-b border-stone-200 shadow-sm">
         <div className="max-w-md mx-auto">
-          <div className="py-4 text-center">
+          <div className="py-4 px-4 text-center relative">
             <h1 className="font-serif text-2xl font-bold tracking-tight text-jp-red">
               香奈兒的北歐極光遊
             </h1>
             <p className="text-xs text-stone-500 uppercase tracking-widest mt-1">越南 • 丹麥 • 瑞典 • 挪威</p>
+
+            {/* Logout Button */}
+            <button
+              onClick={handleLogout}
+              className="absolute right-4 top-1/2 -translate-y-1/2 p-2 hover:bg-stone-200 rounded-full transition-colors"
+              title="登出"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5 text-stone-600">
+                <path fillRule="evenodd" d="M7.5 3.75A1.5 1.5 0 006 5.25v13.5a1.5 1.5 0 001.5 1.5h6a1.5 1.5 0 001.5-1.5V15a.75.75 0 011.5 0v3.75a3 3 0 01-3 3h-6a3 3 0 01-3-3V5.25a3 3 0 013-3h6a3 3 0 013 3V9A.75.75 0 0114.25 9V5.25a1.5 1.5 0 00-1.5-1.5h-6zm10.72 4.72a.75.75 0 011.06 0l3 3a.75.75 0 010 1.06l-3 3a.75.75 0 11-1.06-1.06l1.72-1.72H9a.75.75 0 010-1.5h10.94l-1.72-1.72a.75.75 0 010-1.06z" clipRule="evenodd" />
+              </svg>
+            </button>
           </div>
 
           <div className="relative">
@@ -458,6 +565,32 @@ const App: React.FC = () => {
           <h2 className="text-2xl font-serif font-bold text-jp-ink flex items-center justify-center gap-2">
             {activeDay?.location}
           </h2>
+
+          {/* Route Optimization Button */}
+          {!isViewOnly && activeDay && activeDay.items.length >= 2 && (
+            <button
+              onClick={handleOptimizeRoute}
+              disabled={isOptimizing}
+              className="mt-3 inline-flex items-center gap-2 px-4 py-2 bg-jp-blue text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm font-bold shadow-md"
+            >
+              {isOptimizing ? (
+                <>
+                  <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  優化中...
+                </>
+              ) : (
+                <>
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
+                    <path fillRule="evenodd" d="M8.161 2.58a1.875 1.875 0 011.678 0l4.993 2.498c.106.052.23.052.336 0l3.869-1.935A1.875 1.875 0 0121.75 4.82v12.485c0 .71-.401 1.36-1.037 1.677l-4.875 2.437a1.875 1.875 0 01-1.676 0l-4.994-2.497a.375.375 0 00-.336 0l-3.868 1.935A1.875 1.875 0 012.25 19.18V6.695c0-.71.401-1.36 1.036-1.677l4.875-2.437zM9 6a.75.75 0 01.75.75V15a.75.75 0 01-1.5 0V6.75A.75.75 0 019 6zm6.75 3a.75.75 0 00-1.5 0v8.25a.75.75 0 001.5 0V9z" clipRule="evenodd" />
+                  </svg>
+                  優化路線
+                </>
+              )}
+            </button>
+          )}
         </div>
 
         {/* Itinerary Timeline */}
@@ -473,6 +606,7 @@ const App: React.FC = () => {
                   key={item.id}
                   item={item}
                   onDelete={() => handleDeleteItem(item.id)}
+                  isViewOnly={isViewOnly}
                 />
               ))}
             </div>
@@ -481,23 +615,48 @@ const App: React.FC = () => {
 
       </main>
 
-      {/* Floating Add Button */}
-      <div className="fixed bottom-6 right-6 z-40 max-w-md mx-auto w-full pointer-events-none flex justify-end px-6">
-        <button
-          onClick={() => setIsModalOpen(true)}
-          className="pointer-events-auto w-14 h-14 bg-jp-red text-white rounded-full shadow-xl shadow-jp-red/30 flex items-center justify-center hover:scale-110 active:scale-95 transition-all duration-300"
-          aria-label="Add Item"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-        </button>
-      </div>
+      {/* Floating Add Button - Hidden in view-only mode */}
+      {!isViewOnly && (
+        <div className="fixed bottom-6 right-6 z-40 max-w-md mx-auto w-full pointer-events-none flex justify-end px-6 gap-3">
+          {/* Expense Tracker Button */}
+          <button
+            onClick={() => setIsExpenseTrackerOpen(true)}
+            className="pointer-events-auto w-14 h-14 bg-jp-gold text-white rounded-full shadow-xl shadow-jp-gold/30 flex items-center justify-center hover:scale-110 active:scale-95 transition-all duration-300"
+            aria-label="Expense Tracker"
+            title="記帳本"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6">
+              <path d="M12 7.5a2.25 2.25 0 100 4.5 2.25 2.25 0 000-4.5z" />
+              <path fillRule="evenodd" d="M1.5 4.875C1.5 3.839 2.34 3 3.375 3h17.25c1.035 0 1.875.84 1.875 1.875v9.75c0 1.036-.84 1.875-1.875 1.875H3.375A1.875 1.875 0 011.5 14.625v-9.75zM8.25 9.75a3.75 3.75 0 117.5 0 3.75 3.75 0 01-7.5 0zM18.75 9a.75.75 0 00-.75.75v.008c0 .414.336.75.75.75h.008a.75.75 0 00.75-.75V9.75a.75.75 0 00-.75-.75h-.008zM4.5 9.75A.75.75 0 015.25 9h.008a.75.75 0 01.75.75v.008a.75.75 0 01-.75.75H5.25a.75.75 0 01-.75-.75V9.75z" clipRule="evenodd" />
+              <path d="M2.25 18a.75.75 0 000 1.5c5.4 0 10.63.722 15.6 2.075 1.19.324 2.4-.558 2.4-1.82V18.75a.75.75 0 00-.75-.75H2.25z" />
+            </svg>
+          </button>
+
+          {/* Add Item Button */}
+          <button
+            onClick={() => setIsModalOpen(true)}
+            className="pointer-events-auto w-14 h-14 bg-jp-red text-white rounded-full shadow-xl shadow-jp-red/30 flex items-center justify-center hover:scale-110 active:scale-95 transition-all duration-300"
+            aria-label="Add Item"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+          </button>
+        </div>
+      )}
 
       <AddItemModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         onAdd={handleAddItem}
+      />
+
+      <ExpenseTracker
+        isOpen={isExpenseTrackerOpen}
+        onClose={() => setIsExpenseTrackerOpen(false)}
+        schedule={schedule}
+        activeDayId={activeDayId}
+        isViewOnly={isViewOnly}
       />
 
     </div>

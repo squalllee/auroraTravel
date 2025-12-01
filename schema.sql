@@ -45,6 +45,9 @@ CREATE TABLE itinerary_items (
     location_query VARCHAR(255),
     lat DOUBLE PRECISION,
     lng DOUBLE PRECISION,
+    
+    -- Sort order for custom ordering (e.g., from route optimization)
+    sort_order INTEGER,
 
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
@@ -56,3 +59,24 @@ CREATE INDEX idx_itinerary_items_day_id ON itinerary_items(day_id);
 -- Comments for documentation
 COMMENT ON TABLE days IS 'Stores the daily schedule summary';
 COMMENT ON TABLE itinerary_items IS 'Stores individual events/items within a day';
+
+-- Table for Expenses
+CREATE TABLE expenses (
+    id VARCHAR(50) PRIMARY KEY,
+    day_id VARCHAR(50) NOT NULL REFERENCES days(id) ON DELETE CASCADE,
+    item_id VARCHAR(50) REFERENCES itinerary_items(id) ON DELETE SET NULL,
+    
+    category VARCHAR(50) NOT NULL,
+    amount DECIMAL(10, 2) NOT NULL,
+    currency VARCHAR(10) NOT NULL DEFAULT 'TWD',
+    description TEXT,
+    
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Create an index on day_id for faster lookups
+CREATE INDEX idx_expenses_day_id ON expenses(day_id);
+CREATE INDEX idx_expenses_category ON expenses(category);
+
+COMMENT ON TABLE expenses IS 'Stores expense records for the trip';
