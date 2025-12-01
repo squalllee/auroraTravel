@@ -222,6 +222,7 @@ const App: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isExpenseTrackerOpen, setIsExpenseTrackerOpen] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [swipeProgress, setSwipeProgress] = useState(0);
 
   const navRef = useRef<HTMLDivElement>(null);
   const mainRef = useRef<HTMLDivElement>(null);
@@ -236,13 +237,20 @@ const App: React.FC = () => {
   // Handle swipe gestures
   const handleTouchStart = (e: React.TouchEvent) => {
     touchStartX.current = e.touches[0].clientX;
+    touchEndX.current = e.touches[0].clientX; // Reset endX
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
+    if (touchStartX.current === 0) return;
     touchEndX.current = e.touches[0].clientX;
+    const diff = touchEndX.current - touchStartX.current;
+    // Normalize the progress based on screen width, capped at -1 and 1
+    const progress = Math.max(-1, Math.min(1, diff / (window.innerWidth / 2) ));
+    setSwipeProgress(progress);
   };
 
   const handleTouchEnd = () => {
+    setSwipeProgress(0); // Reset progress
     const swipeThreshold = 50; // Minimum distance for a swipe
     const diff = touchStartX.current - touchEndX.current;
 
@@ -494,6 +502,28 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-jp-paper text-jp-ink font-sans selection:bg-jp-red/20">
+
+      {/* Swipe indicators */}
+      <div
+        className="fixed left-4 top-1/2 -translate-y-1/2 z-50 p-4 pointer-events-none transition-opacity duration-200"
+        style={{ opacity: Math.max(0, swipeProgress * 5) }} // Multiply for faster feedback
+      >
+        <div className="p-2 bg-black/40 rounded-full shadow-lg">
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+          </svg>
+        </div>
+      </div>
+      <div
+        className="fixed right-4 top-1/2 -translate-y-1/2 z-50 p-4 pointer-events-none transition-opacity duration-200"
+        style={{ opacity: Math.max(0, -swipeProgress * 5) }} // Multiply for faster feedback
+      >
+        <div className="p-2 bg-black/40 rounded-full shadow-lg">
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+          </svg>
+        </div>
+      </div>
 
       {/* Header / Date Navigation - Sticky */}
       <header className="sticky top-0 z-40 bg-[#F9F7F2]/95 backdrop-blur-md border-b border-stone-200 shadow-sm">
