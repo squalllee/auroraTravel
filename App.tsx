@@ -224,11 +224,48 @@ const App: React.FC = () => {
   const [loading, setLoading] = useState(true);
 
   const navRef = useRef<HTMLDivElement>(null);
+  const mainRef = useRef<HTMLDivElement>(null);
+  const touchStartX = useRef<number>(0);
+  const touchEndX = useRef<number>(0);
 
   const { isLoaded, loadError } = useLoadScript({
     googleMapsApiKey: API_KEY,
     libraries,
   });
+
+  // Handle swipe gestures
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX;
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    touchEndX.current = e.touches[0].clientX;
+  };
+
+  const handleTouchEnd = () => {
+    const swipeThreshold = 50; // Minimum distance for a swipe
+    const diff = touchStartX.current - touchEndX.current;
+
+    if (Math.abs(diff) > swipeThreshold) {
+      const currentIndex = schedule.findIndex(d => d.id === activeDayId);
+
+      if (diff > 0) {
+        // Swiped left - go to next day
+        if (currentIndex < schedule.length - 1) {
+          setActiveDayId(schedule[currentIndex + 1].id);
+        }
+      } else {
+        // Swiped right - go to previous day
+        if (currentIndex > 0) {
+          setActiveDayId(schedule[currentIndex - 1].id);
+        }
+      }
+    }
+
+    // Reset
+    touchStartX.current = 0;
+    touchEndX.current = 0;
+  };
 
   // Check authentication on mount
   useEffect(() => {
