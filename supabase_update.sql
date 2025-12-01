@@ -41,6 +41,7 @@ CREATE TABLE itinerary_items (
     price VARCHAR(50),          -- e.g., '9,003 TWD'. Stored as string to include currency/text
     link TEXT,                  -- URL
     image_url TEXT,             -- URL to image thumbnail
+    notes TEXT,                 -- User notes
     
     -- Optional location fields if needed in the future
     location_query VARCHAR(255),

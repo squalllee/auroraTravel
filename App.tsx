@@ -4,6 +4,7 @@ import { useLoadScript } from '@react-google-maps/api';
 import ItineraryCard from './components/ItineraryCard';
 import AuthPage from './components/AuthPage';
 import ExpenseTracker from './components/ExpenseTracker';
+import DayMap from './components/DayMap';
 import { DaySchedule, ItineraryItem, ItemType } from './types';
 import { supabase } from './src/lib/supabase';
 import { fetchPlaceInfo } from './src/utils/imageSearch';
@@ -142,6 +143,7 @@ const AddItemModal = ({ isOpen, onClose, onAdd }: { isOpen: boolean; onClose: ()
               <label className="block text-xs font-bold text-stone-500 uppercase mb-1">時間</label>
               <input
                 type="time"
+                step="1800"
                 className="w-full px-3 py-2 border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-jp-red/50"
                 value={formData.time}
                 onChange={e => setFormData({ ...formData, time: e.target.value })}
@@ -406,7 +408,7 @@ const App: React.FC = () => {
       if (error) throw error;
     } catch (error) {
       console.error('Error adding item:', error);
-      alert('新增失敗');
+      alert(`新增失敗: ${error.message || '未知錯誤'} ${(error as any).details || ''}`);
       // Revert logic could be added here
     }
   };
@@ -592,6 +594,11 @@ const App: React.FC = () => {
             </button>
           )}
         </div>
+
+        {/* Daily Map */}
+        {activeDay && activeDay.items.length > 0 && (
+          <DayMap items={sortItemsByTime(activeDay.items || [])} />
+        )}
 
         {/* Itinerary Timeline */}
         <div className="relative">
