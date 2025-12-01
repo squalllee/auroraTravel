@@ -503,7 +503,7 @@ const App: React.FC = () => {
         <div className="max-w-md mx-auto">
           <div className="py-4 px-4 text-center relative">
             <h1 className="font-serif text-2xl font-bold tracking-tight text-jp-red">
-              香奈兒的北歐極光遊
+              北歐極光遊
             </h1>
             <p className="text-xs text-stone-500 uppercase tracking-widest mt-1">越南 • 丹麥 • 瑞典 • 挪威</p>
 

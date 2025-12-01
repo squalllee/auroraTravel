@@ -16,7 +16,7 @@ const AuthPage: React.FC<AuthPageProps> = ({ onAuthenticate }) => {
         setError('');
 
         // Check password against environment variable
-        const correctPassword = import.meta.env.VITE_APP_PASSWORD || 'nordic2026';
+        const correctPassword = import.meta.env.VITE_APP_PASSWORD || '123456';
 
         if (password === correctPassword) {
             sessionStorage.setItem('auth_mode', 'full');
