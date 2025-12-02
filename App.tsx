@@ -45,11 +45,11 @@ const AddItemModal = ({ isOpen, onClose, onAdd }: { isOpen: boolean; onClose: ()
 
     setIsFetching(true);
     try {
-      const { imageUrl, description, mapLink, locationCoordinates } = await fetchPlaceInfo(formData.title);
+      const { imageUrl, description, notes, mapLink, locationCoordinates } = await fetchPlaceInfo(formData.title);
 
       let finalImageUrl = imageUrl;
 
-      // If we got an image URL from Places API, upload it to Supabase
+      // If we got an image URL from Places API (or Gemini if supported later), upload it to Supabase
       if (imageUrl) {
         const { uploadImageToSupabase } = await import('./src/utils/imageUpload');
         const tempId = `temp-${Date.now()}`;
@@ -67,6 +67,7 @@ const AddItemModal = ({ isOpen, onClose, onAdd }: { isOpen: boolean; onClose: ()
         ...prev,
         imageUrl: finalImageUrl || prev.imageUrl,
         description: description || prev.description,
+        notes: notes || prev.notes,
         link: mapLink,
         locationCoordinates: locationCoordinates || prev.locationCoordinates,
       }));

@@ -90,35 +90,37 @@ const ItineraryCard: React.FC<Props> = ({
         )}
 
         <div className="p-4">
-          <div className="flex justify-between items-start">
-            <div className="flex-1">
-              <div className="flex items-center gap-2 mb-2 flex-wrap">
-                {item.time && (
-                  <span className="inline-flex items-center px-2 py-0.5 bg-jp-ink/10 rounded text-xs font-bold text-jp-ink/80 backdrop-blur-sm">
-                    <svg className="w-3 h-3 mr-1 opacity-60" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    {item.time}
-                  </span>
-                )}
-                {item.duration && (
-                  <span className="inline-flex items-center px-2 py-0.5 bg-jp-red/10 text-jp-red rounded text-xs font-bold backdrop-blur-sm">
-                    <svg className="w-3 h-3 mr-1 opacity-60" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    {item.duration}
-                  </span>
-                )}
-              </div>
-              <h3 className="font-serif font-bold text-lg leading-tight text-jp-ink pr-6">{item.title}</h3>
+          {/* Top Row: Time, Duration, Price */}
+          <div className="flex justify-between items-center mb-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              {item.time && (
+                <span className="inline-flex items-center px-2 py-0.5 bg-jp-ink/10 rounded text-xs font-bold text-jp-ink/80 backdrop-blur-sm">
+                  <svg className="w-3 h-3 mr-1 opacity-60" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  {item.time}
+                </span>
+              )}
+              {item.duration && (
+                <span className="inline-flex items-center px-2 py-0.5 bg-jp-red/10 text-jp-red rounded text-xs font-bold backdrop-blur-sm">
+                  <svg className="w-3 h-3 mr-1 opacity-60" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  {item.duration}
+                </span>
+              )}
             </div>
             {item.price && (
               <div className="text-right ml-4 shrink-0">
-                <span className="block text-[10px] uppercase tracking-wider opacity-60">價格</span>
                 <span className="font-sans font-bold text-sm text-jp-red">{item.price}</span>
               </div>
             )}
           </div>
+
+          {/* Title Row */}
+          <h3 className="font-serif font-bold text-lg leading-tight text-jp-ink whitespace-nowrap overflow-hidden text-ellipsis mb-2">
+            {item.title}
+          </h3>
 
           {item.description && (
             <p className="mt-2 text-sm opacity-80 font-sans leading-relaxed text-stone-700">
@@ -126,33 +128,35 @@ const ItineraryCard: React.FC<Props> = ({
             </p>
           )}
 
-          {/* Link Text - Always visible if link exists */}
-          {item.link && (
-            <a
-              href={item.link}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="mt-3 inline-flex items-center gap-1 text-sm font-bold text-jp-blue hover:text-jp-red transition-colors"
-            >
-              <span>查看詳情 / 地圖</span>
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
-                <path fillRule="evenodd" d="M4.25 5.5a.75.75 0 00-.75.75v8.5c0 .414.336.75.75.75h8.5a.75.75 0 00.75-.75v-4a.75.75 0 011.5 0v4A2.25 2.25 0 0112.75 17h-8.5A2.25 2.25 0 012 14.75v-8.5A2.25 2.25 0 014.25 4h5a.75.75 0 010 1.5h-5z" clipRule="evenodd" />
-              </svg>
-            </a>
-          )}
+          <div className="flex items-center gap-3 mt-3">
+            {/* Link Text - Always visible if link exists */}
+            {item.link && (
+              <a
+                href={item.link}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-sm font-bold text-jp-blue hover:text-jp-red transition-colors"
+              >
+                <span>查看詳情 / 地圖</span>
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
+                  <path fillRule="evenodd" d="M4.25 5.5a.75.75 0 00-.75.75v8.5c0 .414.336.75.75.75h8.5a.75.75 0 00.75-.75v-4a.75.75 0 011.5 0v4A2.25 2.25 0 0112.75 17h-8.5A2.25 2.25 0 012 14.75v-8.5A2.25 2.25 0 014.25 4h5a.75.75 0 010 1.5h-5z" clipRule="evenodd" />
+                </svg>
+              </a>
+            )}
 
-          {/* Notes Button */}
-          {item.notes && (
-            <button
-              onClick={() => setShowNotesModal(true)}
-              className="mt-3 inline-flex items-center gap-1.5 px-3 py-2 bg-amber-50 border border-amber-200 text-amber-800 rounded-lg hover:bg-amber-100 transition-colors text-sm font-bold"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a.75.75 0 000 1.5h.253a.25.25 0 01.244.304l-.459 2.066A1.75 1.75 0 0010.747 15H11a.75.75 0 000-1.5h-.253a.25.25 0 01-.244-.304l.459-2.066A1.75 1.75 0 009.253 9H9z" clipRule="evenodd" />
-              </svg>
-              查看備註
-            </button>
-          )}
+            {/* Notes Button - Icon Only */}
+            {item.notes && (
+              <button
+                onClick={() => setShowNotesModal(true)}
+                className="inline-flex items-center justify-center w-8 h-8 bg-amber-50 border border-amber-200 text-amber-800 rounded-full hover:bg-amber-100 transition-colors"
+                title="查看備註"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                  <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a.75.75 0 000 1.5h.253a.25.25 0 01.244.304l-.459 2.066A1.75 1.75 0 0010.747 15H11a.75.75 0 000-1.5h-.253a.25.25 0 01-.244-.304l.459-2.066A1.75 1.75 0 009.253 9H9z" clipRule="evenodd" />
+                </svg>
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
