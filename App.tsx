@@ -124,41 +124,7 @@ const AddItemModal = ({ isOpen, onClose, onAdd, items, location, insertAfterItem
     }
   };
 
-  const parseDuration = (durationStr: string | undefined): number => {
-    if (!durationStr) return 0;
-    let totalMinutes = 0;
-    const hourMatch = durationStr.match(/(\d+(\.\d+)?)\s*小時/);
-    const minMatch = durationStr.match(/(\d+)\s*分鐘/);
-    if (hourMatch) totalMinutes += parseFloat(hourMatch[1]) * 60;
-    if (minMatch) totalMinutes += parseInt(minMatch[1], 10);
-    return totalMinutes * 60; // return in seconds
-  };
 
-  const addTimeTo = (timeStr: string, durationSeconds: number, round: boolean = false): string => {
-    if (!timeStr) {
-      const now = new Date();
-      now.setSeconds(now.getSeconds() + durationSeconds);
-      return `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
-    }
-    const [hours, minutes] = timeStr.split(':').map(Number);
-    const date = new Date();
-    date.setHours(hours, minutes, 0, 0);
-    date.setSeconds(date.getSeconds() + durationSeconds);
-
-    if (round) {
-      const mins = date.getMinutes();
-      const roundedMins = Math.round(mins / 30) * 30;
-      date.setMinutes(roundedMins);
-      if (roundedMins === 60) {
-        date.setHours(date.getHours() + 1);
-        date.setMinutes(0);
-      }
-    }
-
-    const newHours = date.getHours().toString().padStart(2, '0');
-    const newMinutes = date.getMinutes().toString().padStart(2, '0');
-    return `${newHours}:${newMinutes}`;
-  };
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
@@ -554,6 +520,76 @@ const App: React.FC = () => {
 
       if (error) throw error;
       console.log('Insert successful:', data);
+
+      // --- Ripple Update Logic (Shift by Duration) ---
+      // Shift all subsequent items by the duration of the inserted item
+      if (itemsToInsert.length > 0) {
+        const lastInsertedItem = itemsToInsert[itemsToInsert.length - 1];
+        const insertedStartTime = lastInsertedItem.start_time || '00:00';
+        const shiftSeconds = parseDuration(lastInsertedItem.duration);
+
+        if (shiftSeconds > 0) {
+          // Find subsequent items based on TIME
+          // Filter out the newly inserted items themselves
+          const insertedIds = new Set(itemsToInsert.map(i => i.id));
+          const otherItems = currentItems.filter(i => !insertedIds.has(i.id));
+
+          // Find items that start at or after the new item's start time
+          const subsequentItems = otherItems
+            .filter(item => {
+              const itemTime = item.time || '00:00';
+              return itemTime >= insertedStartTime;
+            })
+            .sort((a, b) => (a.time || '00:00').localeCompare(b.time || '00:00'));
+
+          if (subsequentItems.length > 0) {
+            console.log(`Shifting ${subsequentItems.length} items by ${shiftSeconds / 60} minutes.`);
+
+            const itemsToUpdate = subsequentItems.map(item => {
+              const currentItemTime = item.time || '00:00';
+              const newTime = addTimeTo(currentItemTime, shiftSeconds);
+              return {
+                ...item,
+                time: newTime
+              };
+            });
+
+            // Optimistic update for shifted items
+            const newSchedule = [...updatedSchedule];
+            const dayIndex = newSchedule.findIndex(d => d.id === activeDayId);
+            if (dayIndex !== -1) {
+              itemsToUpdate.forEach(updatedItem => {
+                const itemIndex = newSchedule[dayIndex].items.findIndex(i => i.id === updatedItem.id);
+                if (itemIndex !== -1) {
+                  newSchedule[dayIndex].items[itemIndex] = updatedItem;
+                }
+              });
+              // Re-sort the items by time since we changed times
+              newSchedule[dayIndex].items.sort((a, b) => (a.time || '00:00').localeCompare(b.time || '00:00'));
+              setSchedule(newSchedule);
+            }
+
+            // Database update for shifted items
+            const updates = itemsToUpdate.map(item => ({
+              id: item.id,
+              start_time: item.time,
+              updated_at: new Date().toISOString()
+            }));
+
+            const { error: updateError } = await supabase
+              .from('itinerary_items')
+              .upsert(updates);
+
+            if (updateError) {
+              console.error('Error updating shifted items:', updateError);
+            } else {
+              console.log('Shifted items updated successfully');
+            }
+          }
+        }
+      }
+      // --- End Ripple Update Logic ---
+
     } catch (error: any) {
       console.error('Error adding items:', error);
       alert(`新增失敗: ${error.message || '未知錯誤'} \nDetails: ${JSON.stringify(error, null, 2)}`);
@@ -730,6 +766,44 @@ const App: React.FC = () => {
 
     </div>
   );
+};
+
+// --- Helper Functions ---
+
+const parseDuration = (durationStr: string | undefined): number => {
+  if (!durationStr) return 0;
+  let totalMinutes = 0;
+  const hourMatch = durationStr.match(/(\d+(\.\d+)?)\s*小時/);
+  const minMatch = durationStr.match(/(\d+)\s*分鐘/);
+  if (hourMatch) totalMinutes += parseFloat(hourMatch[1]) * 60;
+  if (minMatch) totalMinutes += parseInt(minMatch[1], 10);
+  return totalMinutes * 60; // return in seconds
+};
+
+const addTimeTo = (timeStr: string, durationSeconds: number, round: boolean = false): string => {
+  if (!timeStr) {
+    const now = new Date();
+    now.setSeconds(now.getSeconds() + durationSeconds);
+    return `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+  }
+  const [hours, minutes] = timeStr.split(':').map(Number);
+  const date = new Date();
+  date.setHours(hours, minutes, 0, 0);
+  date.setSeconds(date.getSeconds() + durationSeconds);
+
+  if (round) {
+    const mins = date.getMinutes();
+    const roundedMins = Math.round(mins / 30) * 30;
+    date.setMinutes(roundedMins);
+    if (roundedMins === 60) {
+      date.setHours(date.getHours() + 1);
+      date.setMinutes(0);
+    }
+  }
+
+  const newHours = date.getHours().toString().padStart(2, '0');
+  const newMinutes = date.getMinutes().toString().padStart(2, '0');
+  return `${newHours}:${newMinutes}`;
 };
 
 export default App;
