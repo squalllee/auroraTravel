@@ -6,14 +6,14 @@ import AuthPage from './components/AuthPage';
 import ExpenseTracker from './components/ExpenseTracker';
 import { DaySchedule, ItineraryItem, ItemType } from './types';
 import { supabase } from './src/lib/supabase';
-import { fetchPlaceInfo } from './src/utils/imageSearch';
+import { fetchPlaceInfo, FetchedPlaceDetails } from './src/utils/imageSearch';
 
 const API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string;
 const libraries: ("places")[] = ["places"];
 
 // Simple Modal Component for Adding Items
-const AddItemModal = ({ isOpen, onClose, onAdd }: { isOpen: boolean; onClose: () => void; onAdd: (item: Partial<ItineraryItem>) => void }) => {
-  const [formData, setFormData] = useState<Partial<ItineraryItem>>({
+const AddItemModal = ({ isOpen, onClose, onAdd, items, location, insertAfterItem }: { isOpen: boolean; onClose: () => void; onAdd: (items: Partial<ItineraryItem>[]) => void; items: ItineraryItem[], location: string, insertAfterItem?: ItineraryItem }) => {
+  const initialFormData: Partial<ItineraryItem> = {
     title: '',
     time: '',
     duration: '',
@@ -24,17 +24,26 @@ const AddItemModal = ({ isOpen, onClose, onAdd }: { isOpen: boolean; onClose: ()
     imageUrl: '',
     notes: '',
     locationCoordinates: undefined,
-  });
+  };
+  const [formData, setFormData] = useState<Partial<ItineraryItem>>(initialFormData);
   const [isFetching, setIsFetching] = useState(false);
+
+  const handleClose = () => {
+    onClose();
+    setFormData(initialFormData);
+  };
 
   if (!isOpen) return null;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.title) return;
-    onAdd(formData);
-    onClose();
-    setFormData({ title: '', time: '', duration: '', type: ItemType.ACTIVITY, description: '', price: '', link: '', imageUrl: '', notes: '', locationCoordinates: undefined });
+
+    const itemsToAdd: Partial<ItineraryItem>[] = [];
+    itemsToAdd.push(formData);
+
+    onAdd(itemsToAdd);
+    handleClose();
   };
 
   const handleAutoFetch = async () => {
@@ -45,44 +54,68 @@ const AddItemModal = ({ isOpen, onClose, onAdd }: { isOpen: boolean; onClose: ()
 
     setIsFetching(true);
     try {
-      const { imageUrl, description, notes, mapLink, locationCoordinates } = await fetchPlaceInfo(formData.title);
+      const previousItem = insertAfterItem || (items.length > 0 ? items[items.length - 1] : undefined);
+      const { placeInfo, travelInfo } = await fetchPlaceInfo(formData.title, previousItem, location);
+
+      const { imageUrl, description, notes, mapLink, suggestedDuration } = placeInfo;
 
       let finalImageUrl = imageUrl;
-
-      // If we got an image URL from Places API (or Gemini if supported later), upload it to Supabase
       if (imageUrl) {
         const { uploadImageToSupabase } = await import('./src/utils/imageUpload');
         const tempId = `temp-${Date.now()}`;
         const supabaseImageUrl = await uploadImageToSupabase(imageUrl, tempId);
-
         if (supabaseImageUrl) {
           finalImageUrl = supabaseImageUrl;
-          console.log('Image uploaded to Supabase:', supabaseImageUrl);
-        } else {
-          console.warn('Failed to upload to Supabase, using original URL');
         }
       }
 
+      // --- NEW LOGIC ---
+      let arrivalTime = formData.time;
+      let travelNotes = '';
+
+      if (travelInfo && previousItem) {
+        // 1. Create travel notes
+        travelNotes = `\n\n【自動規劃交通】\n方式：${travelInfo.method}\n時間：約 ${travelInfo.duration}\n`;
+        if (travelInfo.cost) {
+          travelNotes += `預估費用：${travelInfo.cost}`;
+        }
+        if (travelInfo.description) {
+          travelNotes += `\n說明：${travelInfo.description}`;
+        }
+
+        // 2. Calculate arrival time
+        if (travelInfo.arriveTime) {
+          arrivalTime = travelInfo.arriveTime;
+        } else {
+          const previousEndTime = addTimeTo(previousItem.time || '00:00', parseDuration(previousItem.duration));
+          arrivalTime = addTimeTo(previousEndTime, parseDuration(travelInfo.duration), true); // Round to nearest 30 mins
+        }
+      }
+      // --- END NEW LOGIC ---
+
       setFormData(prev => ({
         ...prev,
+        title: formData.title,
         imageUrl: finalImageUrl || prev.imageUrl,
         description: description || prev.description,
-        notes: notes || prev.notes,
+        notes: (notes || '') + travelNotes, // Append travel notes
         link: mapLink,
-        locationCoordinates: locationCoordinates || prev.locationCoordinates,
+        locationCoordinates: prev.locationCoordinates, // Keep previous coordinates or undefined since we don't fetch new ones
+        time: arrivalTime, // Set rounded arrival time
+        duration: suggestedDuration || prev.duration,
       }));
 
       // Provide detailed feedback
-      if (!imageUrl && !description && !locationCoordinates) {
-        alert('❌ 找不到相關資訊\n請檢查景點名稱或手動輸入');
-      } else {
-        const foundItems = [];
-        if (imageUrl) foundItems.push('照片');
-        if (description) foundItems.push('簡介');
-        if (locationCoordinates) foundItems.push('位置');
+      const foundItems = [];
+      if (description) foundItems.push('簡介');
+      if (travelInfo) foundItems.push('交通');
 
-        alert(`✅ 搜尋成功！\n已找到：${foundItems.join('、')}`);
+      if (foundItems.length === 0) {
+        alert('❌ 找不到相關資訊');
+      } else {
+        alert(`✅ 搜尋成功！已找到：${foundItems.join('、')}`);
       }
+
     } catch (error) {
       console.error('Auto-fetch error:', error);
       alert('❌ 自動搜尋失敗\n' + (error instanceof Error ? error.message : '請稍後再試'));
@@ -91,12 +124,48 @@ const AddItemModal = ({ isOpen, onClose, onAdd }: { isOpen: boolean; onClose: ()
     }
   };
 
+  const parseDuration = (durationStr: string | undefined): number => {
+    if (!durationStr) return 0;
+    let totalMinutes = 0;
+    const hourMatch = durationStr.match(/(\d+(\.\d+)?)\s*小時/);
+    const minMatch = durationStr.match(/(\d+)\s*分鐘/);
+    if (hourMatch) totalMinutes += parseFloat(hourMatch[1]) * 60;
+    if (minMatch) totalMinutes += parseInt(minMatch[1], 10);
+    return totalMinutes * 60; // return in seconds
+  };
+
+  const addTimeTo = (timeStr: string, durationSeconds: number, round: boolean = false): string => {
+    if (!timeStr) {
+      const now = new Date();
+      now.setSeconds(now.getSeconds() + durationSeconds);
+      return `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+    }
+    const [hours, minutes] = timeStr.split(':').map(Number);
+    const date = new Date();
+    date.setHours(hours, minutes, 0, 0);
+    date.setSeconds(date.getSeconds() + durationSeconds);
+
+    if (round) {
+      const mins = date.getMinutes();
+      const roundedMins = Math.round(mins / 30) * 30;
+      date.setMinutes(roundedMins);
+      if (roundedMins === 60) {
+        date.setHours(date.getHours() + 1);
+        date.setMinutes(0);
+      }
+    }
+
+    const newHours = date.getHours().toString().padStart(2, '0');
+    const newMinutes = date.getMinutes().toString().padStart(2, '0');
+    return `${newHours}:${newMinutes}`;
+  };
+
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
       <div className="bg-white rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl max-h-[90vh] overflow-y-auto">
         <div className="bg-jp-red px-6 py-4 flex justify-between items-center text-white sticky top-0 z-10">
           <h3 className="font-serif font-bold text-lg">新增行程</h3>
-          <button onClick={onClose} className="hover:bg-white/20 rounded-full p-1 transition-colors">
+          <button onClick={handleClose} className="hover:bg-white/20 rounded-full p-1 transition-colors">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
@@ -221,6 +290,7 @@ const App: React.FC = () => {
   const [schedule, setSchedule] = useState<DaySchedule[]>([]);
   const [activeDayId, setActiveDayId] = useState<string>('');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [insertAfterItem, setInsertAfterItem] = useState<ItineraryItem | undefined>(undefined);
   const [isExpenseTrackerOpen, setIsExpenseTrackerOpen] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -296,15 +366,7 @@ const App: React.FC = () => {
     }
   };
 
-  // Helper function to sort items by time
-  const sortItemsByTime = (items: ItineraryItem[]): ItineraryItem[] => {
-    return [...items].sort((a, b) => {
-      if (!a.time && !b.time) return 0;
-      if (!a.time) return 1;
-      if (!b.time) return -1;
-      return a.time.localeCompare(b.time);
-    });
-  };
+
 
   const fetchData = async () => {
     try {
@@ -322,7 +384,9 @@ const App: React.FC = () => {
       const { data: itemsData, error: itemsError } = await supabase
         .from('itinerary_items')
         .select('*')
-        .order('start_time', { ascending: true }); // Sort by time
+        .order('start_time', { ascending: true })
+        .order('sort_order', { ascending: true, nullsFirst: false })
+        .order('created_at', { ascending: true }); // Sort by creation time for new items
 
       if (itemsError) throw itemsError;
 
@@ -342,7 +406,8 @@ const App: React.FC = () => {
             imageUrl: item.image_url,
             notes: item.notes,
             locationQuery: item.location_query,
-            locationCoordinates: item.lat && item.lng ? { lat: item.lat, lng: item.lng } : undefined
+            locationCoordinates: item.lat && item.lng ? { lat: item.lat, lng: item.lng } : undefined,
+            sortOrder: item.sort_order
           }));
 
         return {
@@ -420,53 +485,85 @@ const App: React.FC = () => {
     }
   };
 
-  const handleAddItem = async (newItemData: Partial<ItineraryItem>) => {
-    // Use the user provided link, or default to a search query if empty (optional safety net)
-    const finalLink = newItemData.link || (newItemData.title ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(newItemData.title)}` : undefined);
+  const handleAddItem = async (newItemsData: Partial<ItineraryItem>[]) => {
 
-    const newId = `new-${Date.now()}`;
-    const newItem: ItineraryItem = {
-      id: newId,
-      title: newItemData.title || 'New Item',
-      time: newItemData.time,
-      duration: newItemData.duration,
-      type: newItemData.type || ItemType.ACTIVITY,
-      description: newItemData.description,
-      price: newItemData.price,
-      link: finalLink,
-      imageUrl: newItemData.imageUrl,
-      notes: newItemData.notes,
-      locationCoordinates: newItemData.locationCoordinates,
-    };
+    const itemsToAdd: ItineraryItem[] = newItemsData.map((itemData, index) => {
+      const finalLink = itemData.link || (itemData.title ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(itemData.title)}` : undefined);
+      const newId = `new-${Date.now()}-${index}`;
+      return {
+        id: newId,
+        title: itemData.title || 'New Item',
+        time: itemData.time,
+        duration: itemData.duration,
+        type: itemData.type || ItemType.ACTIVITY,
+        description: itemData.description,
+        price: itemData.price,
+        link: finalLink,
+        imageUrl: itemData.imageUrl,
+        notes: itemData.notes,
+        locationCoordinates: itemData.locationCoordinates,
+      };
+    });
 
     // Optimistic update
     const updatedSchedule = [...schedule];
-    updatedSchedule[activeDayIndex].items.push(newItem);
+    const activeItems = updatedSchedule[activeDayIndex].items;
+
+    // If we are inserting after a specific item, find its index
+    const insertIndex = insertAfterItem
+      ? activeItems.findIndex(i => i.id === insertAfterItem.id) + 1
+      : activeItems.length;
+
+    activeItems.splice(insertIndex, 0, ...itemsToAdd);
+
     setSchedule(updatedSchedule);
+    setInsertAfterItem(undefined); // Reset after insertion
 
     try {
-      const { error } = await supabase.from('itinerary_items').insert({
-        id: newId,
+      if (!activeDayId) {
+        throw new Error('無法取得目前天數 ID (activeDayId is missing)');
+      }
+
+      // Calculate next sort order
+      const currentItems = schedule.find(d => d.id === activeDayId)?.items || [];
+      const maxSortOrder = currentItems.reduce((max, item) => Math.max(max, item.sortOrder || 0), 0);
+
+      const itemsToInsert = itemsToAdd.map((item, index) => ({
+        id: item.id,
         day_id: activeDayId,
-        title: newItem.title,
-        start_time: newItem.time,
-        duration: newItem.duration,
-        item_type: newItem.type,
-        description: newItem.description,
-        price: newItem.price,
-        link: newItem.link,
-        image_url: newItem.imageUrl,
-        notes: newItem.notes,
-        lat: newItem.locationCoordinates?.lat,
-        lng: newItem.locationCoordinates?.lng,
-      });
+        title: item.title,
+        start_time: item.time,
+        duration: item.duration,
+        item_type: item.type,
+        description: item.description,
+        price: item.price,
+        link: item.link,
+        image_url: item.imageUrl,
+        notes: item.notes,
+        lat: item.locationCoordinates?.lat,
+        lng: item.locationCoordinates?.lng,
+        sort_order: maxSortOrder + 1 + index
+      }));
+
+      console.log('Inserting items:', itemsToInsert);
+
+      const { data, error } = await supabase
+        .from('itinerary_items')
+        .insert(itemsToInsert)
+        .select();
 
       if (error) throw error;
-    } catch (error) {
-      console.error('Error adding item:', error);
-      alert(`新增失敗: ${error.message || '未知錯誤'} ${(error as any).details || ''}`);
+      console.log('Insert successful:', data);
+    } catch (error: any) {
+      console.error('Error adding items:', error);
+      alert(`新增失敗: ${error.message || '未知錯誤'} \nDetails: ${JSON.stringify(error, null, 2)}`);
       // Revert logic could be added here
     }
+  };
+
+  const handleInsertAfter = (item: ItineraryItem) => {
+    setInsertAfterItem(item);
+    setIsModalOpen(true);
   };
 
   // Show auth page if not authenticated
@@ -575,11 +672,12 @@ const App: React.FC = () => {
             </div>
           ) : (
             <div className="space-y-4 px-4 pb-6">
-              {activeDay && sortItemsByTime(activeDay.items || []).map((item) => (
+              {activeDay && (activeDay.items || []).map((item) => (
                 <ItineraryCard
                   key={item.id}
                   item={item}
                   onDelete={() => handleDeleteItem(item.id)}
+                  onInsertAfter={() => handleInsertAfter(item)}
                   isViewOnly={isViewOnly}
                 />
               ))}
@@ -606,23 +704,20 @@ const App: React.FC = () => {
             </svg>
           </button>
 
-          {/* Add Item Button */}
-          <button
-            onClick={() => setIsModalOpen(true)}
-            className="pointer-events-auto w-14 h-14 bg-jp-red text-white rounded-full shadow-xl shadow-jp-red/30 flex items-center justify-center hover:scale-110 active:scale-95 transition-all duration-300"
-            aria-label="Add Item"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-          </button>
+
         </div>
       )}
 
       <AddItemModal
         isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
+        onClose={() => {
+          setIsModalOpen(false);
+          setInsertAfterItem(undefined);
+        }}
         onAdd={handleAddItem}
+        items={activeDay?.items || []}
+        location={activeDay?.location || ''}
+        insertAfterItem={insertAfterItem}
       />
 
       <ExpenseTracker

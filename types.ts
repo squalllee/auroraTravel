@@ -21,6 +21,7 @@ export interface ItineraryItem {
   notes?: string; // User notes/remarks
   locationQuery?: string;
   locationCoordinates?: { lat: number, lng: number };
+  sortOrder?: number;
 }
 
 export interface DaySchedule {
