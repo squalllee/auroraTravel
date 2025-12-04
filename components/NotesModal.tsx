@@ -47,7 +47,28 @@ const NotesModal: React.FC<NotesModalProps> = ({ isOpen, onClose, title, notes }
                                 </svg>
                                 <div className="flex-1">
                                     <p className="text-base text-stone-700 whitespace-pre-wrap leading-relaxed">
-                                        {notes}
+                                        {notes.split('\n').map((line, i) => (
+                                            <React.Fragment key={i}>
+                                                {line.split(/(\[[^\]]+\]\([^)]+\))/g).map((part, j) => {
+                                                    const match = part.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+                                                    if (match) {
+                                                        return (
+                                                            <a
+                                                                key={j}
+                                                                href={match[2]}
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                                className="text-jp-blue hover:text-jp-red underline decoration-1 underline-offset-2 font-medium transition-colors"
+                                                            >
+                                                                {match[1]}
+                                                            </a>
+                                                        );
+                                                    }
+                                                    return part;
+                                                })}
+                                                <br />
+                                            </React.Fragment>
+                                        ))}
                                     </p>
                                 </div>
                             </div>

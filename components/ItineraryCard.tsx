@@ -125,9 +125,10 @@ const ItineraryCard: React.FC<Props> = ({
           </h3>
 
           {item.description && (
-            <p className="mt-2 text-sm opacity-80 font-sans leading-relaxed text-stone-700">
-              {item.description}
-            </p>
+            <div
+              className="mt-2 text-sm opacity-80 font-sans leading-relaxed text-stone-700 [&_a]:text-jp-blue [&_a]:underline [&_a]:font-bold hover:[&_a]:text-jp-red"
+              dangerouslySetInnerHTML={{ __html: item.description }}
+            />
           )}
 
           <div className="flex items-center gap-3 mt-3">
