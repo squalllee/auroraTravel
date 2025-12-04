@@ -88,7 +88,7 @@ export async function fetchPlaceInfo(placeName: string, previousItem?: Itinerary
             }
 
             prompt += `
-            請以 JSON 格式回傳，格式如下：
+            請嚴格尊守以 JSON 格式回傳，不要有其他文字，格式如下：
             {
                 "place": {
                     "description": "簡介內容...",
