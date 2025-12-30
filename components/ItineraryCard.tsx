@@ -7,14 +7,12 @@ import NotesModal from './NotesModal';
 interface Props {
   item: ItineraryItem;
   onDelete: () => void;
-  onInsertAfter?: () => void;
   isViewOnly?: boolean;
 }
 
 const ItineraryCard: React.FC<Props> = ({
   item,
   onDelete,
-  onInsertAfter,
   isViewOnly = false
 }) => {
   const [showNotesModal, setShowNotesModal] = useState(false);
@@ -163,18 +161,6 @@ const ItineraryCard: React.FC<Props> = ({
         </div>
       </div>
 
-      {/* Insert After Button */}
-      {!isViewOnly && onInsertAfter && (
-        <button
-          onClick={onInsertAfter}
-          className="absolute -bottom-5 left-1/2 transform -translate-x-1/2 w-10 h-10 bg-jp-blue text-white rounded-full shadow-lg hover:bg-jp-red hover:scale-110 transition-all flex items-center justify-center opacity-0 group-hover:opacity-100 z-20"
-          title="在此後新增行程"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
-            <path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" />
-          </svg>
-        </button>
-      )}
 
       {/* Notes Modal */}
       <NotesModal

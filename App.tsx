@@ -6,248 +6,10 @@ import AuthPage from './components/AuthPage';
 import ExpenseTracker from './components/ExpenseTracker';
 import { DaySchedule, ItineraryItem, ItemType } from './types';
 import { supabase } from './src/lib/supabase';
-import { fetchPlaceInfo, FetchedPlaceDetails } from './src/utils/imageSearch';
 
 const API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string;
 const libraries: ("places")[] = ["places"];
 
-// Simple Modal Component for Adding Items
-const AddItemModal = ({ isOpen, onClose, onAdd, items, location, insertAfterItem }: { isOpen: boolean; onClose: () => void; onAdd: (items: Partial<ItineraryItem>[]) => void; items: ItineraryItem[], location: string, insertAfterItem?: ItineraryItem }) => {
-  const initialFormData: Partial<ItineraryItem> = {
-    title: '',
-    time: '',
-    duration: '',
-    type: ItemType.ACTIVITY,
-    description: '',
-    price: '',
-    link: '',
-    imageUrl: '',
-    notes: '',
-    locationCoordinates: undefined,
-  };
-  const [formData, setFormData] = useState<Partial<ItineraryItem>>(initialFormData);
-  const [isFetching, setIsFetching] = useState(false);
-
-  const handleClose = () => {
-    onClose();
-    setFormData(initialFormData);
-  };
-
-  if (!isOpen) return null;
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!formData.title) return;
-
-    const itemsToAdd: Partial<ItineraryItem>[] = [];
-    itemsToAdd.push(formData);
-
-    onAdd(itemsToAdd);
-    handleClose();
-  };
-
-  const handleAutoFetch = async () => {
-    if (!formData.title?.trim()) {
-      alert('請先輸入標題');
-      return;
-    }
-
-    setIsFetching(true);
-    try {
-      const previousItem = insertAfterItem || (items.length > 0 ? items[items.length - 1] : undefined);
-      const { placeInfo, travelInfo } = await fetchPlaceInfo(formData.title, previousItem, location);
-
-      const { imageUrl, description, notes, mapLink, suggestedDuration } = placeInfo;
-
-      let finalImageUrl = imageUrl;
-      if (imageUrl) {
-        const { uploadImageToSupabase } = await import('./src/utils/imageUpload');
-        const tempId = `temp-${Date.now()}`;
-        const supabaseImageUrl = await uploadImageToSupabase(imageUrl, tempId);
-        if (supabaseImageUrl) {
-          finalImageUrl = supabaseImageUrl;
-        }
-      }
-
-      // --- NEW LOGIC ---
-      let arrivalTime = formData.time;
-      let travelNotes = '';
-
-      if (travelInfo && previousItem) {
-        // 1. Create travel notes
-        travelNotes = `\n\n【自動規劃交通】\n方式：${travelInfo.method}\n時間：約 ${travelInfo.duration}\n`;
-        if (travelInfo.cost) {
-          travelNotes += `預估費用：${travelInfo.cost}`;
-        }
-        if (travelInfo.description) {
-          travelNotes += `\n說明：${travelInfo.description}`;
-        }
-
-        // 2. Calculate arrival time
-        if (travelInfo.arriveTime) {
-          arrivalTime = travelInfo.arriveTime;
-        } else {
-          const previousEndTime = addTimeTo(previousItem.time || '00:00', parseDuration(previousItem.duration));
-          arrivalTime = addTimeTo(previousEndTime, parseDuration(travelInfo.duration), true); // Round to nearest 30 mins
-        }
-      }
-      // --- END NEW LOGIC ---
-
-      setFormData(prev => ({
-        ...prev,
-        title: formData.title,
-        imageUrl: finalImageUrl || prev.imageUrl,
-        description: description || prev.description,
-        notes: (notes || '') + travelNotes, // Append travel notes
-        link: mapLink,
-        locationCoordinates: prev.locationCoordinates, // Keep previous coordinates or undefined since we don't fetch new ones
-        time: arrivalTime, // Set rounded arrival time
-        duration: suggestedDuration || prev.duration,
-      }));
-
-      // Provide detailed feedback
-      const foundItems = [];
-      if (description) foundItems.push('簡介');
-      if (travelInfo) foundItems.push('交通');
-
-      if (foundItems.length === 0) {
-        alert('❌ 找不到相關資訊');
-      } else {
-        alert(`✅ 搜尋成功！已找到：${foundItems.join('、')}`);
-      }
-
-    } catch (error) {
-      console.error('Auto-fetch error:', error);
-      alert('❌ 自動搜尋失敗\n' + (error instanceof Error ? error.message : '請稍後再試'));
-    } finally {
-      setIsFetching(false);
-    }
-  };
-
-
-
-  return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
-      <div className="bg-white rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl max-h-[90vh] overflow-y-auto">
-        <div className="bg-jp-red px-6 py-4 flex justify-between items-center text-white sticky top-0 z-10">
-          <h3 className="font-serif font-bold text-lg">新增行程</h3>
-          <button onClick={handleClose} className="hover:bg-white/20 rounded-full p-1 transition-colors">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          <div>
-            <div className="flex items-center justify-between mb-1">
-              <label className="block text-xs font-bold text-stone-500 uppercase">標題</label>
-              <button
-                type="button"
-                onClick={handleAutoFetch}
-                disabled={isFetching || !formData.title?.trim()}
-                className="text-xs px-2 py-1 rounded bg-jp-blue text-white hover:bg-jp-red transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
-              >
-                {isFetching ? (
-                  <>
-                    <svg className="animate-spin h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    搜尋中
-                  </>
-                ) : (
-                  <>
-                    🔍 自動搜尋
-                  </>
-                )}
-              </button>
-            </div>
-            <input
-              autoFocus
-              type="text"
-              className="w-full px-3 py-2 border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-jp-red/50"
-              placeholder="例如：晚餐吃海鮮"
-              value={formData.title}
-              onChange={e => setFormData({ ...formData, title: e.target.value })}
-              required
-            />
-          </div>
-          <div className="flex gap-4">
-            <div className="flex-1">
-              <label className="block text-xs font-bold text-stone-500 uppercase mb-1">時間</label>
-              <select
-                className="w-full px-3 py-2 border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-jp-red/50 bg-white"
-                value={formData.time}
-                onChange={e => setFormData({ ...formData, time: e.target.value })}
-              >
-                <option value="">選擇時間</option>
-                {Array.from({ length: 48 }, (_, i) => {
-                  const hour = Math.floor(i / 2).toString().padStart(2, '0');
-                  const minute = i % 2 === 0 ? '00' : '30';
-                  const timeValue = `${hour}:${minute}`;
-                  return <option key={timeValue} value={timeValue}>{timeValue}</option>;
-                })}
-              </select>
-            </div>
-            <div className="flex-1">
-              <label className="block text-xs font-bold text-stone-500 uppercase mb-1">停留時間</label>
-              <input
-                type="text"
-                placeholder="例如：1.5小時"
-                className="w-full px-3 py-2 border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-jp-red/50"
-                value={formData.duration}
-                onChange={e => setFormData({ ...formData, duration: e.target.value })}
-              />
-            </div>
-          </div>
-          <div className="flex gap-4">
-            <div className="flex-1">
-              <label className="block text-xs font-bold text-stone-500 uppercase mb-1">類型</label>
-              <select
-                className="w-full px-3 py-2 border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-jp-red/50 bg-white"
-                value={formData.type}
-                onChange={e => setFormData({ ...formData, type: e.target.value as ItemType })}
-              >
-                <option value={ItemType.ACTIVITY}>景點/活動</option>
-                <option value={ItemType.FLIGHT}>航班</option>
-                <option value={ItemType.HOTEL}>住宿</option>
-                <option value={ItemType.TRAIN}>火車</option>
-                <option value={ItemType.CAR_RENTAL}>租車</option>
-                <option value={ItemType.INFO}>資訊</option>
-              </select>
-            </div>
-            <div className="flex-1">
-              <label className="block text-xs font-bold text-stone-500 uppercase mb-1">價格 (選填)</label>
-              <input
-                type="text"
-                placeholder="TWD"
-                className="w-full px-3 py-2 border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-jp-red/50"
-                value={formData.price}
-                onChange={e => setFormData({ ...formData, price: e.target.value })}
-              />
-            </div>
-          </div>
-          <div>
-            <label className="block text-xs font-bold text-stone-500 uppercase mb-1">備註 (選填)</label>
-            <textarea
-              className="w-full px-3 py-2 border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-jp-red/50 text-sm"
-              rows={3}
-              placeholder="輸入備註或特殊事項..."
-              value={formData.notes}
-              onChange={e => setFormData({ ...formData, notes: e.target.value })}
-            />
-          </div>
-          <button
-            type="submit"
-            className="w-full py-3 bg-jp-ink text-white font-bold rounded-xl hover:bg-stone-800 transition-colors shadow-lg mt-2"
-          >
-            確認新增
-          </button>
-        </form>
-      </div>
-    </div>
-  );
-};
 
 
 const App: React.FC = () => {
@@ -255,8 +17,6 @@ const App: React.FC = () => {
   const [isViewOnly, setIsViewOnly] = useState(false);
   const [schedule, setSchedule] = useState<DaySchedule[]>([]);
   const [activeDayId, setActiveDayId] = useState<string>('');
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [insertAfterItem, setInsertAfterItem] = useState<ItineraryItem | undefined>(undefined);
   const [isExpenseTrackerOpen, setIsExpenseTrackerOpen] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -451,156 +211,7 @@ const App: React.FC = () => {
     }
   };
 
-  const handleAddItem = async (newItemsData: Partial<ItineraryItem>[]) => {
 
-    const itemsToAdd: ItineraryItem[] = newItemsData.map((itemData, index) => {
-      const finalLink = itemData.link || (itemData.title ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(itemData.title)}` : undefined);
-      const newId = `new-${Date.now()}-${index}`;
-      return {
-        id: newId,
-        title: itemData.title || 'New Item',
-        time: itemData.time,
-        duration: itemData.duration,
-        type: itemData.type || ItemType.ACTIVITY,
-        description: itemData.description,
-        price: itemData.price,
-        link: finalLink,
-        imageUrl: itemData.imageUrl,
-        notes: itemData.notes,
-        locationCoordinates: itemData.locationCoordinates,
-      };
-    });
-
-    // Optimistic update
-    const updatedSchedule = [...schedule];
-    const activeItems = updatedSchedule[activeDayIndex].items;
-
-    // If we are inserting after a specific item, find its index
-    const insertIndex = insertAfterItem
-      ? activeItems.findIndex(i => i.id === insertAfterItem.id) + 1
-      : activeItems.length;
-
-    activeItems.splice(insertIndex, 0, ...itemsToAdd);
-
-    setSchedule(updatedSchedule);
-    setInsertAfterItem(undefined); // Reset after insertion
-
-    try {
-      if (!activeDayId) {
-        throw new Error('無法取得目前天數 ID (activeDayId is missing)');
-      }
-
-      // Calculate next sort order
-      const currentItems = schedule.find(d => d.id === activeDayId)?.items || [];
-      const maxSortOrder = currentItems.reduce((max, item) => Math.max(max, item.sortOrder || 0), 0);
-
-      const itemsToInsert = itemsToAdd.map((item, index) => ({
-        id: item.id,
-        day_id: activeDayId,
-        title: item.title,
-        start_time: item.time,
-        duration: item.duration,
-        item_type: item.type,
-        description: item.description,
-        price: item.price,
-        link: item.link,
-        image_url: item.imageUrl,
-        notes: item.notes,
-        lat: item.locationCoordinates?.lat,
-        lng: item.locationCoordinates?.lng,
-        sort_order: maxSortOrder + 1 + index
-      }));
-
-      console.log('Inserting items:', itemsToInsert);
-
-      const { data, error } = await supabase
-        .from('itinerary_items')
-        .insert(itemsToInsert)
-        .select();
-
-      if (error) throw error;
-      console.log('Insert successful:', data);
-
-      // --- Ripple Update Logic (Shift by Duration) ---
-      // Shift all subsequent items by the duration of the inserted item
-      if (itemsToInsert.length > 0) {
-        const lastInsertedItem = itemsToInsert[itemsToInsert.length - 1];
-        const insertedStartTime = lastInsertedItem.start_time || '00:00';
-        const shiftSeconds = parseDuration(lastInsertedItem.duration);
-
-        if (shiftSeconds > 0) {
-          // Find subsequent items based on TIME
-          // Filter out the newly inserted items themselves
-          const insertedIds = new Set(itemsToInsert.map(i => i.id));
-          const otherItems = currentItems.filter(i => !insertedIds.has(i.id));
-
-          // Find items that start at or after the new item's start time
-          const subsequentItems = otherItems
-            .filter(item => {
-              const itemTime = item.time || '00:00';
-              return itemTime >= insertedStartTime;
-            })
-            .sort((a, b) => (a.time || '00:00').localeCompare(b.time || '00:00'));
-
-          if (subsequentItems.length > 0) {
-            console.log(`Shifting ${subsequentItems.length} items by ${shiftSeconds / 60} minutes.`);
-
-            const itemsToUpdate = subsequentItems.map(item => {
-              const currentItemTime = item.time || '00:00';
-              const newTime = addTimeTo(currentItemTime, shiftSeconds);
-              return {
-                ...item,
-                time: newTime
-              };
-            });
-
-            // Optimistic update for shifted items
-            const newSchedule = [...updatedSchedule];
-            const dayIndex = newSchedule.findIndex(d => d.id === activeDayId);
-            if (dayIndex !== -1) {
-              itemsToUpdate.forEach(updatedItem => {
-                const itemIndex = newSchedule[dayIndex].items.findIndex(i => i.id === updatedItem.id);
-                if (itemIndex !== -1) {
-                  newSchedule[dayIndex].items[itemIndex] = updatedItem;
-                }
-              });
-              // Re-sort the items by time since we changed times
-              newSchedule[dayIndex].items.sort((a, b) => (a.time || '00:00').localeCompare(b.time || '00:00'));
-              setSchedule(newSchedule);
-            }
-
-            // Database update for shifted items
-            const updates = itemsToUpdate.map(item => ({
-              id: item.id,
-              start_time: item.time,
-              updated_at: new Date().toISOString()
-            }));
-
-            const { error: updateError } = await supabase
-              .from('itinerary_items')
-              .upsert(updates);
-
-            if (updateError) {
-              console.error('Error updating shifted items:', updateError);
-            } else {
-              console.log('Shifted items updated successfully');
-            }
-          }
-        }
-      }
-      // --- End Ripple Update Logic ---
-
-    } catch (error: any) {
-      console.error('Error adding items:', error);
-      alert(`新增失敗: ${error.message || '未知錯誤'} \nDetails: ${JSON.stringify(error, null, 2)}`);
-      // Revert logic could be added here
-    }
-  };
-
-  const handleInsertAfter = (item: ItineraryItem) => {
-    setInsertAfterItem(item);
-    setIsModalOpen(true);
-  };
 
   // Show auth page if not authenticated
   if (!isAuthenticated) {
@@ -704,7 +315,7 @@ const App: React.FC = () => {
         <div className="relative">
           {!activeDay || activeDay.items.length === 0 ? (
             <div className="text-center py-10 text-stone-400 italic">
-              尚無行程，點擊下方 + 新增。
+              尚無行程。
             </div>
           ) : (
             <div className="space-y-4 px-4 pb-6">
@@ -713,7 +324,6 @@ const App: React.FC = () => {
                   key={item.id}
                   item={item}
                   onDelete={() => handleDeleteItem(item.id)}
-                  onInsertAfter={() => handleInsertAfter(item)}
                   isViewOnly={isViewOnly}
                 />
               ))}
@@ -744,17 +354,6 @@ const App: React.FC = () => {
         </div>
       )}
 
-      <AddItemModal
-        isOpen={isModalOpen}
-        onClose={() => {
-          setIsModalOpen(false);
-          setInsertAfterItem(undefined);
-        }}
-        onAdd={handleAddItem}
-        items={activeDay?.items || []}
-        location={activeDay?.location || ''}
-        insertAfterItem={insertAfterItem}
-      />
 
       <ExpenseTracker
         isOpen={isExpenseTrackerOpen}
